@@ -9,9 +9,12 @@ import platform
 HOSTNAME = socket.gethostname()
 
 # Ollama Configuration
-OLLAMA_HOST = f"http://{HOSTNAME}:9999"
-OLLAMA_MODEL = "mistral"
-OLLAMA_TIMEOUT = 120
+# config.py
+
+LLM_SERVER_URL = "http://localhost:9999"
+#OLLAMA_HOST = LLM_SERVER_URL
+
+LLM_TIMEOUT = 120
 USE_OLLAMA_FALLBACK = True
 
 # FAISS Configuration

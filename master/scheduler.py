@@ -6,6 +6,8 @@ import threading
 import time
 from collections import defaultdict
 from typing import Dict, Optional
+
+from urllib3 import request
 from common.models import Request, Response
 from lb.load_balancer import LoadBalancer
 from common.metrics import MetricsCollector
@@ -45,6 +47,9 @@ class Scheduler:
             
             # Get response from load balancer (via worker)
             response = self.lb.dispatch(request)
+
+            worker_id = self.lb.last_assigned_worker
+            self.active_tasks[request.id]["worker_id"] = worker_id
             
             # Record latency
             latency = time.time() - start
@@ -109,19 +114,21 @@ class Scheduler:
         
         # Reassign to healthy workers
         for req_id, task in tasks_to_reassign:
-            healthy_workers = [
-                i for i, status in self.worker_health.items()
-                if status == "HEALTHY"
-            ]
-            
-            if not healthy_workers:
-                print(f"[Scheduler] No healthy workers available for request {req_id}")
-                continue
-            
-            # Pick next healthy worker
-            next_worker_id = healthy_workers[0]
-            print(f"[Scheduler] Reassigning request {req_id} to worker {next_worker_id}")
-            task["worker_id"] = next_worker_id
+            print(f"[Scheduler] Re-dispatching request {req_id}")
+
+            try:
+                response = self.lb.dispatch(task["request"])
+
+                latency = time.time() - task["start_time"]
+                response.latency = latency
+
+                self.metrics.record_latency(req_id, latency)
+
+                print(f"[Scheduler] ✅ Recovered request {req_id} | Latency: {latency:.4f}s")
+
+            except Exception as e:
+                print(f"[Scheduler] ❌ Retry failed for request {req_id}: {e}")
+                self.metrics.record_failure()
     
     def get_worker_status(self) -> Dict:
         """Get status of all workers"""

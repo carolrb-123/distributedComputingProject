@@ -1,48 +1,50 @@
-# llm/inference.py
-import json
-import time
-import requests  # We are swapping urllib out for requests
+import requests
 import config
+import threading
+
+# 🔒 prevents overload of single llama.cpp server
+LLM_LOCK = threading.Lock()
+
 
 def run_llm(query: str, context: str) -> str:
-    """
-    Call Ollama API with fallback to mock response
-    """
-    prompt = f"""Context: {context}\n\nQuestion: {query}\n\nAnswer:"""
-    
-    try:
-        return _call_ollama(prompt)
-    except Exception as e:
-        if config.USE_OLLAMA_FALLBACK:
-            print(f"⚠ [LLM] Ollama unavailable ({str(e)[:50]}), using fallback")
-            return _mock_llm_response(query, context)
-        else:
-            raise
+    prompt = f"""Context: {context}
 
-def _call_ollama(prompt: str) -> str:
-    """Call the llama.cpp server using the requests library"""
-    payload = {
-        "prompt": prompt,
-        "stream": False,
-        "n_predict": 256
-    }
-    
+Question: {query}
+
+Answer:"""
+
     try:
-        # requests.post directly handles the networking and bypasses urllib quirks
+        return _call_llamacpp(prompt)
+    except Exception as e:
+        print(f"❌ [LLM ERROR] {e}")
+        raise
+
+
+def _call_llamacpp(prompt: str) -> str:
+    with LLM_LOCK:  # 🔥 CRITICAL FIX
+
+        payload = {
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "n_predict": 16
+        }
+
         response = requests.post(
-            f"{config.OLLAMA_HOST}/completion",
+            f"{config.LLM_SERVER_URL}/v1/chat/completions",
             json=payload,
-            timeout=config.OLLAMA_TIMEOUT
+            timeout=config.LLM_TIMEOUT
         )
-        response.raise_for_status() # Catches any 404 or 500 errors
-        
-        result = response.json()
-        return result.get("content", "No response from LLM").strip()
-        
-    except Exception as e:
-        raise Exception(f"LLM connection failed: {e}")
 
-def _mock_llm_response(query: str, context: str) -> str:
-    """Generate mock LLM response"""
-    context_preview = context[:100].replace('\n', ' ')
-    return f"[MOCK RESPONSE] Based on the context about '{context_preview}...', the answer to '{query}' is that this is a simulated response for testing purposes."
+        response.raise_for_status()
+        result = response.json()
+
+        # DEBUG (optional)
+        #print("LLM RESPONSE:", result)
+
+        try:
+            return result["choices"][0]["message"]["content"].strip()
+        except Exception:
+            print("BAD LLM RESPONSE:", result)
+            raise
