@@ -1,22 +1,14 @@
-# llm/inference. py
-"""
-LLM Inference with Ollama + Fallback
-"""
+# llm/inference.py
 import json
 import time
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+import requests  # We are swapping urllib out for requests
 import config
 
 def run_llm(query: str, context: str) -> str:
     """
     Call Ollama API with fallback to mock response
     """
-    prompt = f"""Context: {context}
-
-Question: {query}
-
-Answer:"""
+    prompt = f"""Context: {context}\n\nQuestion: {query}\n\nAnswer:"""
     
     try:
         return _call_ollama(prompt)
@@ -28,29 +20,29 @@ Answer:"""
             raise
 
 def _call_ollama(prompt: str) -> str:
-    """Call real Ollama API"""
+    """Call the llama.cpp server using the requests library"""
     payload = {
-        "model": config.OLLAMA_MODEL,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "n_predict": 256
     }
     
-    req = Request(
-        f"{config.OLLAMA_HOST}/api/generate",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"}
-    )
-    
     try:
-        with urlopen(req, timeout=config.OLLAMA_TIMEOUT) as response:
-            result = json.loads(response.read().decode())
-            return result.get("response", "No response from Ollama")
-    except (URLError, HTTPError, TimeoutError) as e:
-        raise Exception(f"Ollama connection failed: {e}")
+        # requests.post directly handles the networking and bypasses urllib quirks
+        response = requests.post(
+            f"{config.OLLAMA_HOST}/completion",
+            json=payload,
+            timeout=config.OLLAMA_TIMEOUT
+        )
+        response.raise_for_status() # Catches any 404 or 500 errors
+        
+        result = response.json()
+        return result.get("content", "No response from LLM").strip()
+        
+    except Exception as e:
+        raise Exception(f"LLM connection failed: {e}")
 
 def _mock_llm_response(query: str, context: str) -> str:
-    """
-    Generate mock LLM response (for testing without Ollama)
-    """
+    """Generate mock LLM response"""
     context_preview = context[:100].replace('\n', ' ')
     return f"[MOCK RESPONSE] Based on the context about '{context_preview}...', the answer to '{query}' is that this is a simulated response for testing purposes."

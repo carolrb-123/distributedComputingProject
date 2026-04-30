@@ -4,9 +4,9 @@ Configuration for Phase 3 distributed system
 """
 
 # Ollama Configuration
-OLLAMA_HOST = "http://192.168.1.88:11434"  # Update this to your Mac's IP if needed
+OLLAMA_HOST = "http://Carol.local:9999"
 OLLAMA_MODEL = "mistral"
-OLLAMA_TIMEOUT = 30  # seconds
+OLLAMA_TIMEOUT = 120  # seconds
 USE_OLLAMA_FALLBACK = True  # Use mock responses if Ollama unavailable
 
 # FAISS Configuration
@@ -19,7 +19,7 @@ WORKER_TIMEOUT = 5  # seconds before marking worker as failed
 TASK_REASSIGNMENT_ENABLED = True
 
 # Load Testing
-NUM_USERS = 1000
+NUM_USERS =  2
 REQUESTS_PER_USER = 1
 
 # System Configuration
