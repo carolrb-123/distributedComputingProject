@@ -14,7 +14,7 @@ HOSTNAME = socket.gethostname()
 LLM_SERVER_URL = "http://localhost:9999"
 #OLLAMA_HOST = LLM_SERVER_URL
 
-LLM_TIMEOUT = 120
+LLM_TIMEOUT = 30
 USE_OLLAMA_FALLBACK = True
 
 # FAISS Configuration
@@ -32,3 +32,5 @@ REQUESTS_PER_USER = 1
 
 # System Configuration
 NUM_WORKERS = 4
+
+MAX_QUEUE_SIZE = 5
