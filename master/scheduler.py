@@ -55,7 +55,19 @@ class Scheduler:
 
             for _ in range(2):  # retry once
                 try:
-                    response = self.lb.dispatch(request)
+                    event = threading.Event()
+                    result_container = {}
+
+                    def callback(response):
+                        result_container["response"] = response
+                        event.set()
+
+                    request.callback = callback
+
+                    self.lb.dispatch(request)
+
+                    event.wait()
+                    response = result_container["response"]
                     break
                 except Exception as e:
                     last_error = e

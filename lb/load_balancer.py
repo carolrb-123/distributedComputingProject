@@ -61,27 +61,13 @@ class LoadBalancer:
     # DISPATCH WITH RETRY (FIXED)
     # ---------------------------
     def dispatch(self, request):
-        last_error = None
+        worker, worker_id = self.get_least_loaded_worker()
 
-        for _ in range(len(self.workers)):  # try all workers
-            try:
-                worker, worker_id = self.get_least_loaded_worker()
-                self.last_assigned_worker = worker_id
+        print(f"[LB] Request {request.id} → Worker {worker_id}")
 
-                print(f"[LB] Request {request.id} → Worker {worker_id}")
+        worker.process(request)
 
-                response = worker.process(request)
-
-                # update soft metrics
-                self._update_worker_stats(worker)
-
-                return response
-
-            except Exception as e:
-                last_error = e
-                self._mark_worker_bad(worker_id)
-
-        raise Exception(f"All workers failed. Last error: {last_error}")
+        return True
 
     # ---------------------------
     # MARK WORKER AS BAD

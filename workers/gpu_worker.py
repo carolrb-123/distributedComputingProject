@@ -1,11 +1,11 @@
 #workers/gpu_worker.py
-import random
-import time
-import requests
-from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 import threading
+import time
+import random
+import requests
 
-from common.models import Request, Response
+from common.models import Response
 from llm.inference import run_llm
 from rag.retriever import retrieve_context
 
@@ -14,20 +14,12 @@ class GPUWorker:
     def __init__(self, worker_id: int):
         self.id = worker_id
 
-        self.executor = ThreadPoolExecutor(max_workers=4)  # FIXED (was 1)
+        self.queue = Queue(maxsize=10)
         self.lock = threading.Lock()
 
-        self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=50,
-            pool_maxsize=50
-        )
-        self.session.mount("http://", adapter)
-
+        self.is_healthy = True
         self.fail_count = 0
         self.max_failures = 5
-        self.recovery_time = 5
-        self.is_healthy = True
 
         self.queue_size = 0
         self.processed_count = 0
@@ -45,72 +37,77 @@ class GPUWorker:
 
         self.server_url = random.choice(self.server_urls)
 
-    def process(self, request: Request) -> Response:
-        with self.lock:
-            self.queue_size += 1
+        # start worker thread
+        threading.Thread(target=self._run, daemon=True).start()
 
-        try:
-            future = self.executor.submit(self._handle_request, request)
-            return future.result()
-        finally:
-            with self.lock:
-                self.queue_size -= 1
+    # -----------------------
+    # PUBLIC API (NON-BLOCKING)
+    # -----------------------
+    def process(self, request):
+        self.queue.put(request)
 
-    def _handle_request(self, request: Request) -> Response:
-        start = time.time()
+    # -----------------------
+    # WORKER LOOP
+    # -----------------------
+    def _run(self):
+        while True:
+            request = self.queue.get()
 
-        try:
-            self.last_activity = time.time()
+            start = time.time()
 
-            context = retrieve_context(request.query, k=3)
+            try:
+                self.last_activity = time.time()
 
-            result = run_llm(
-                request.query,
-                context,
-                self.server_url,
-                session=self.session
-            )
+                context = retrieve_context(request.query, k=3)
 
-            latency = time.time() - start
+                result = run_llm(
+                    request.query,
+                    context,
+                    self.server_url
+                )
 
-            self.processed_count += 1
-            self.fail_count = 0
+                latency = time.time() - start
 
-            self.total_latency += latency
-            self.avg_latency = self.total_latency / self.processed_count
+                with self.lock:
+                    self.processed_count += 1
+                    self.total_latency += latency
+                    self.avg_latency = self.total_latency / self.processed_count
+                    self.fail_count = 0
 
-            return Response(
-                id=request.id,
-                result=result,
-                latency=latency
-            )
+                request.callback(
+                    Response(
+                        id=request.id,
+                        result=result,
+                        latency=latency
+                    )
+                )
 
-        except Exception as e:
-            self.fail_count += 1
+            except Exception as e:
+                self.fail_count += 1
 
-            if self.fail_count >= self.max_failures*2:
-                self.is_healthy = False
-                self.recovery_time = time.time() + 5
+                if self.fail_count >= self.max_failures:
+                    self.is_healthy = False
 
-            return Response(
-                id=request.id,
-                result="ERROR",
-                latency=0
-            )
+                request.callback(
+                    Response(
+                        id=request.id,
+                        result=f"ERROR: {str(e)}",
+                        latency=0
+                    )
+                )
 
-    def is_alive(self) -> bool:
-        if not self.is_healthy and time.time() > self.recovery_time:
-            self.is_healthy = True
-            self.fail_count = 0
+            finally:
+                self.queue.task_done()
 
-        return self.is_healthy
+    # -----------------------
+    # STATUS
+    # -----------------------
     def get_status(self):
         return {
             "id": self.id,
             "is_healthy": self.is_healthy,
-            "queue_size": self.queue_size,
+            "queue_size": self.queue.qsize(),
             "processed_count": self.processed_count,
             "avg_latency": self.avg_latency,
             "last_activity": self.last_activity
         }
-    

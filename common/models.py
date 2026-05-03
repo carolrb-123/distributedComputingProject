@@ -2,8 +2,10 @@
 from dataclasses import dataclass
 @dataclass
 class Request:
-    id: int
-    query: str
+    def __init__(self, id, query, callback=None):
+        self.id = id
+        self.query = query
+        self.callback = callback
 @dataclass
 class Response:
     id: int

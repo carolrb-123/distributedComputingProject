@@ -2,9 +2,9 @@
   "total_requests": 1000,
   "failed_requests": 0,
   "success_rate": 1.0,
-  "throughput_req_per_sec": 1.158732000359944,
-  "avg_latency_sec": 42.248909116506574,
-  "p50_latency_sec": 38.86484098434448,
-  "p99_latency_sec": 85.1004958152771,
-  "timestamp": "2026-05-03T18:33:11.314909"
+  "throughput_req_per_sec": 0.3979154801249834,
+  "avg_latency_sec": 123.35040920186043,
+  "p50_latency_sec": 52.47950005531311,
+  "p99_latency_sec": 651.7231822013855,
+  "timestamp": "2026-05-03T18:57:31.584205"
 }
