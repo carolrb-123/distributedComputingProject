@@ -1,12 +1,12 @@
+#llm/inference.py
 import requests
 import config
 import threading
 
-# 🔒 prevents overload of single llama.cpp server
 LLM_LOCK = threading.Lock()
 
 
-def run_llm(query: str, context: str, server_url: str) -> str:
+def run_llm(query: str, context: str, server_url: str, session=None) -> str:
     prompt = f"""Context: {context}
 
 Question: {query}
@@ -14,13 +14,13 @@ Question: {query}
 Answer:"""
 
     try:
-        return _call_llamacpp(prompt, server_url)
+        return _call_llamacpp(prompt, server_url, session)
     except Exception as e:
         print(f"❌ [LLM ERROR] {e}")
         raise
 
 
-def _call_llamacpp(prompt: str, server_url: str) -> str:
+def _call_llamacpp(prompt: str, server_url: str, session=None) -> str:
     payload = {
         "messages": [
             {"role": "user", "content": prompt}
@@ -29,7 +29,9 @@ def _call_llamacpp(prompt: str, server_url: str) -> str:
         "n_predict": 32
     }
 
-    response = requests.post(
+    client = session if session else requests  
+
+    response = client.post(
         f"{server_url}/v1/chat/completions",
         json=payload,
         timeout=config.LLM_TIMEOUT
@@ -37,5 +39,7 @@ def _call_llamacpp(prompt: str, server_url: str) -> str:
 
     response.raise_for_status()
     result = response.json()
+
     print(f"DEBUG: calling llama at {server_url}")
+
     return result["choices"][0]["message"]["content"].strip()
