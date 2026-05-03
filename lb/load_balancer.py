@@ -1,38 +1,101 @@
 #lb/load_balancer.py
 import random
 import config
+
+
 class LoadBalancer:
     def __init__(self, workers):
         self.workers = workers
-        self.index = 0
-        self.last_assigned_worker = None  # NEW
+        self.last_assigned_worker = None
+
+        # ensure consistent health state
+        self.worker_health = {i: True for i in range(len(workers))}
+
+        print("[LB] Workers registered:")
+        for i, w in enumerate(self.workers):
+            print(i, w)
+
+    # ---------------------------
+    # SAFE ATTRIBUTE ACCESS
+    # ---------------------------
+    def _safe(self, worker, attr, default=0):
+        return getattr(worker, attr, default)
+
+    # ---------------------------
+    # SCORE FUNCTION (FIXED)
+    # ---------------------------
     def get_worker_score(self, worker):
+        is_healthy = self._safe(worker, "is_healthy", True)
+
+        if not is_healthy:
+            return float("inf")
+
         return (
-            worker.processed_count * 0.2 +
-            getattr(worker, "queue_size", 0) * 2 +
-            getattr(worker, "avg_latency", 0) * 1.5 +
-            (0 if worker.is_healthy else 1000)
+            self._safe(worker, "processed_count", 0) * 0.02 +
+            self._safe(worker, "queue_size", 0) * 3 +
+            self._safe(worker, "avg_latency", 0) * 2
         )
+
+    # ---------------------------
+    # GET BEST WORKER (FIXED)
+    # ---------------------------
     def get_least_loaded_worker(self):
-        healthy_workers = [
+        healthy = [
             (i, w) for i, w in enumerate(self.workers)
-            if getattr(w, "is_healthy", True)
+            if self._safe(w, "is_healthy", True)
         ]
 
-        if not healthy_workers:
-            raise Exception("No healthy workers")
+        if not healthy:
+            # 🚨 fallback instead of crash
+            print("[LB] WARNING: No healthy workers → using ANY worker")
+            healthy = list(enumerate(self.workers))
 
         worker_id, worker = min(
-        healthy_workers,
-        key=lambda x: self.get_worker_score(x[1])
-    )
-        return worker, worker_id
-    def dispatch(self, request):
-        worker, worker_id = self.get_least_loaded_worker()
-        self.last_assigned_worker = worker_id
+            healthy,
+            key=lambda x: self.get_worker_score(x[1])
+        )
 
-        print(f"[LB] Assigning request {request.id} → Worker {worker_id}")
-        if worker.queue_size > config.MAX_QUEUE_SIZE:
-            worker.is_healthy = False
-            print(f"[LB] Worker {worker_id} overloaded → marking unhealthy")
-        return worker.process(request)
+        return worker, worker_id
+
+    # ---------------------------
+    # DISPATCH WITH RETRY (FIXED)
+    # ---------------------------
+    def dispatch(self, request):
+        last_error = None
+
+        for _ in range(len(self.workers)):  # try all workers
+            try:
+                worker, worker_id = self.get_least_loaded_worker()
+                self.last_assigned_worker = worker_id
+
+                print(f"[LB] Request {request.id} → Worker {worker_id}")
+
+                response = worker.process(request)
+
+                # update soft metrics
+                self._update_worker_stats(worker)
+
+                return response
+
+            except Exception as e:
+                last_error = e
+                self._mark_worker_bad(worker_id)
+
+        raise Exception(f"All workers failed. Last error: {last_error}")
+
+    # ---------------------------
+    # MARK WORKER AS BAD
+    # ---------------------------
+    def _mark_worker_bad(self, worker_id):
+        if worker_id is not None:
+            self.worker_health[worker_id] = False
+
+    # ---------------------------
+    # SIMPLE METRICS UPDATE
+    # ---------------------------
+    def _update_worker_stats(self, worker):
+        worker.processed_count = self._safe(worker, "processed_count", 0) + 1
+
+        # optional smoothing for latency
+        if hasattr(worker, "avg_latency"):
+            worker.avg_latency = worker.avg_latency * 0.9
