@@ -17,8 +17,8 @@ class GPUWorker:
         self.id = worker_id  # ✅ REQUIRED
 
         # Concurrency
-        self.executor = ThreadPoolExecutor(max_workers=3)
-        self.semaphore = threading.Semaphore(3)
+        self.executor = ThreadPoolExecutor(max_workers=1)
+        self.semaphore = threading.Semaphore(1)
 
         # HTTP session
         self.session = requests.Session()

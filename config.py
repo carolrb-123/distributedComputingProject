@@ -14,7 +14,7 @@ HOSTNAME = socket.gethostname()
 LLM_SERVER_URL = "http://localhost:9999"
 #OLLAMA_HOST = LLM_SERVER_URL
 
-LLM_TIMEOUT = 30
+LLM_TIMEOUT = 180
 USE_OLLAMA_FALLBACK = True
 
 # FAISS Configuration
