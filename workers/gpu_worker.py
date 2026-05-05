@@ -35,10 +35,13 @@ class GPUWorker:
             "http://localhost:8891"
         ]
 
-        self.server_url = random.choice(self.server_urls)
+        #self.server_url = random.choice(self.server_urls)
 
         # start worker thread
-        threading.Thread(target=self._run, daemon=True).start()
+        self.num_threads = 8  
+
+        for _ in range(self.num_threads):
+            threading.Thread(target=self._run, daemon=True).start()
 
     # -----------------------
     # PUBLIC API (NON-BLOCKING)
@@ -50,9 +53,10 @@ class GPUWorker:
     # WORKER LOOP
     # -----------------------
     def _run(self):
+        
         while True:
             request = self.queue.get()
-
+            self.queue_size = self.queue.qsize()
             start = time.time()
 
             try:
@@ -60,10 +64,12 @@ class GPUWorker:
 
                 context = retrieve_context(request.query, k=3)
 
+                server_url = random.choice(self.server_urls)
+
                 result = run_llm(
                     request.query,
                     context,
-                    self.server_url
+                    server_url
                 )
 
                 latency = time.time() - start

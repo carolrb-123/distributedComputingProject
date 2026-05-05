@@ -7,7 +7,7 @@ class LoadBalancer:
     def __init__(self, workers):
         self.workers = workers
         self.last_assigned_worker = None
-
+        self._rr_index = 0
         # ensure consistent health state
         self.worker_health = {i: True for i in range(len(workers))}
 
@@ -25,16 +25,9 @@ class LoadBalancer:
     # SCORE FUNCTION (FIXED)
     # ---------------------------
     def get_worker_score(self, worker):
-        is_healthy = self._safe(worker, "is_healthy", True)
-
-        if not is_healthy:
+        if not self._safe(worker, "is_healthy", True):
             return float("inf")
-
-        return (
-            self._safe(worker, "processed_count", 0) * 0.02 +
-            self._safe(worker, "queue_size", 0) * 3 +
-            self._safe(worker, "avg_latency", 0) * 2
-        )
+        return self._safe(worker, "queue_size", 0)
 
     # ---------------------------
     # GET BEST WORKER (FIXED)
@@ -46,17 +39,18 @@ class LoadBalancer:
         ]
 
         if not healthy:
-            # 🚨 fallback instead of crash
             print("[LB] WARNING: No healthy workers → using ANY worker")
             healthy = list(enumerate(self.workers))
 
-        worker_id, worker = min(
-            healthy,
-            key=lambda x: self.get_worker_score(x[1])
-        )
+        # sort by queue size, break ties by round-robin order
+        healthy.sort(key=lambda x: (
+            self._safe(x[1], "queue_size", 0),
+            (x[0] - self._rr_index) % len(self.workers)
+        ))
 
+        worker_id, worker = healthy[0]
+        self._rr_index = (worker_id + 1) % len(self.workers)
         return worker, worker_id
-
     # ---------------------------
     # DISPATCH WITH RETRY (FIXED)
     # ---------------------------
@@ -66,6 +60,8 @@ class LoadBalancer:
         print(f"[LB] Request {request.id} → Worker {worker_id}")
 
         worker.process(request)
+        
+        self.last_assigned_worker = worker_id
 
         return True
 
@@ -79,9 +75,9 @@ class LoadBalancer:
     # ---------------------------
     # SIMPLE METRICS UPDATE
     # ---------------------------
-    def _update_worker_stats(self, worker):
+    """def _update_worker_stats(self, worker):
         worker.processed_count = self._safe(worker, "processed_count", 0) + 1
 
         # optional smoothing for latency
         if hasattr(worker, "avg_latency"):
-            worker.avg_latency = worker.avg_latency * 0.9
+            worker.avg_latency = worker.avg_latency * 0.9"""

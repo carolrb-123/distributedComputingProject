@@ -2,7 +2,7 @@
 import requests
 import config
 import threading
-
+import time
 LLM_LOCK = threading.Lock()
 
 
@@ -10,7 +10,7 @@ def run_llm(query: str, context: str, server_url: str, session=None) -> str:
     prompt = f"""Context: {context}
     max_tokens = 50  
 
-Question: {query}
+Question: {query}ll
 
 Answer:"""
 
@@ -27,16 +27,24 @@ def _call_llamacpp(prompt: str, server_url: str, session=None) -> str:
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "n_predict": 32
+        "n_predict": 16
     }
 
     client = session if session else requests  
 
-    response = client.post(
-        f"{server_url}/v1/chat/completions",
-        json=payload,
-        timeout=config.LLM_TIMEOUT
-    )
+    for attempt in range(2):
+        try:
+            response = client.post(
+                f"{server_url}/v1/chat/completions",
+                json=payload,
+                timeout=config.LLM_TIMEOUT
+            )
+            response.raise_for_status()
+            break
+        except Exception as e:
+            if attempt == 1:
+                raise
+            time.sleep(0.2)
 
     response.raise_for_status()
     result = response.json()

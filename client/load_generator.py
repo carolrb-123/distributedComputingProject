@@ -13,12 +13,10 @@ def simulate_user(scheduler, user_id):
 
 
 def run_load_test(scheduler, num_users=1000):
-    with ThreadPoolExecutor(max_workers=50) as executor:
-        futures = []
-
-        for i in range(num_users):
-            futures.append(executor.submit(simulate_user, scheduler, i))
-            time.sleep(0.002)  # smoother ramp
-
+    with ThreadPoolExecutor(max_workers=200) as executor:
+        futures = [
+            executor.submit(simulate_user, scheduler, i)
+            for i in range(num_users)
+        ]
         for f in futures:
             f.result()

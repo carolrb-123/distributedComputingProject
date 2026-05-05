@@ -66,7 +66,9 @@ class Scheduler:
 
                     self.lb.dispatch(request)
 
-                    event.wait()
+                    timed_out = not event.wait(timeout=30)
+                    if timed_out:
+                        raise RuntimeError(f"Request {request.id} timed out after 30s")
                     response = result_container["response"]
                     break
                 except Exception as e:
