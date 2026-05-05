@@ -8,6 +8,7 @@ LLM_LOCK = threading.Lock()
 
 def run_llm(query: str, context: str, server_url: str, session=None) -> str:
     prompt = f"""Context: {context}
+    max_tokens = 50  
 
 Question: {query}
 
