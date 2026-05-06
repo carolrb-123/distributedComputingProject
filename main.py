@@ -1,4 +1,3 @@
-#main.py
 """
 Phase 3 Entry Point - Real RAG + Real LLM + Fault Tolerance
 """
@@ -11,20 +10,16 @@ from common.metrics import MetricsCollector
 from rag.embedding_pipeline import EmbeddingPipeline
 from rag.document_ingester import DocumentIngester
 from rag.retriever import initialize_retriever
+from fault_tolerance_test import run_fault_tolerance_tests
 import os
 
 def setup_rag_pipeline():
     """Initialize RAG components"""
     print("\n[Main] Setting up RAG pipeline...")
     
-    # Initialize embedding pipeline
     embedder = EmbeddingPipeline(config.EMBEDDING_MODEL)
-    
-    # Initialize document ingester
     ingester = DocumentIngester(embedder)
     
-    # Try to load sample documents
-    # For now, use synthetic Q&A pairs
     sample_qa = [
         {
             "question": "What is distributed computing?",
@@ -48,19 +43,13 @@ def setup_rag_pipeline():
         }
     ]
     
-    # Save sample Q&A to JSON
     import json
     qa_file = "sample_qa.json"
     with open(qa_file, 'w') as f:
         json.dump(sample_qa, f)
     
-    # Ingest Q&A
     ingester.ingest_json_qa(qa_file)
-    
-    # Build index
     ingester.build_index()
-    
-    # Initialize global retriever
     initialize_retriever(ingester)
     
     print("[Main] RAG pipeline ready\n")
@@ -70,40 +59,40 @@ def main():
     print("PHASE 3: DISTRIBUTED LLM SYSTEM WITH RAG & FAULT TOLERANCE")
     print("="*70 + "\n")
     
-    # Setup metrics
     metrics = MetricsCollector()
     
-    # Setup RAG
     setup_rag_pipeline()
     
-    # Create GPU workers
     print("[Main] Creating workers...")
     workers = [GPUWorker(i) for i in range(config.NUM_WORKERS)]
     print(f"[Main] Created {config.NUM_WORKERS} workers\n")
     
-    # Create load balancer
     print("[Main] Creating load balancer...")
     lb = LoadBalancer(workers)
     print("[Main] Load balancer ready\n")
     
-    # Create scheduler
     print("[Main] Creating scheduler...")
     scheduler = Scheduler(lb, metrics)
     print("[Main] Scheduler ready\n")
-    
-    # Run load test
+
+    # ─────────────────────────────────────────
+    # FAULT TOLERANCE TESTS (run before main load test)
+    # ─────────────────────────────────────────
+    print("[Main] Running fault tolerance tests...\n")
+    run_fault_tolerance_tests(scheduler, lb)
+
+    # ─────────────────────────────────────────
+    # MAIN LOAD TEST
+    # ─────────────────────────────────────────
     print(f"[Main] Starting load test with {config.NUM_USERS} users...\n")
     run_load_test(scheduler, num_users=config.NUM_USERS)
     
-    # Print results
     print("\n")
     metrics.print_summary()
     
-    # Save metrics
     metrics.save_to_csv("metrics.csv")
     metrics.save_summary_json("metrics_summary.json")
     
-    # Print worker status
     print("\nWorker Status:")
     for worker in workers:
         status = worker.get_status()
@@ -113,7 +102,6 @@ def main():
     print("PHASE 3 COMPLETE")
     print("="*70 + "\n")
     
-    # Shutdown
     scheduler.shutdown()
 
 if __name__ == "__main__":
