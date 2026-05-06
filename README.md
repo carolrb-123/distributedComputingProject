@@ -110,10 +110,10 @@ cd llama.cpp
   -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
   --host ::1 \
   --port 8888 \
-  -ngl 0 \
+  -ngl 99 \
   --ctx-size 256 \
   -n 32 \
-  --threads 3 \
+  --threads 8 \
   --batch-size 512 \
   --ubatch-size 128 \
   --parallel 8
@@ -125,10 +125,10 @@ cd llama.cpp
   -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
   --host ::1 \
   --port 8889 \
-  -ngl 0 \
+  -ngl 99 \
   --ctx-size 256 \
   -n 32 \
-  --threads 3 \
+  --threads 8 \
   --batch-size 512 \
   --ubatch-size 128 \
   --parallel 8
@@ -140,10 +140,10 @@ cd llama.cpp
   -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
   --host ::1 \
   --port 8890 \
-  -ngl 0 \
+  -ngl 99 \
   --ctx-size 256 \
   -n 32 \
-  --threads 3 \
+  --threads 8 \
   --batch-size 512 \
   --ubatch-size 128 \
   --parallel 8
@@ -155,10 +155,10 @@ cd llama.cpp
   -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
   --host ::1 \
   --port 8891 \
-  -ngl 0 \
+  -ngl 99 \
   --ctx-size 256 \
   -n 32 \
-  --threads 3 \
+  --threads 8 \
   --batch-size 512 \
   --ubatch-size 128 \
   --parallel 8
