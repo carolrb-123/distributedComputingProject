@@ -38,10 +38,16 @@ class GPUWorker:
 
         self.processed_count = 0
         self.failed_count = 0
+        self.success_count = 0
         self.in_flight = 0
+        self.active_request_starts = {}
+        self.max_in_flight = config.WORKER_MAX_IN_FLIGHT
 
         self.total_latency = 0.0
         self.avg_latency = 0.0
+        self.ewma_latency = 0.0
+        self.last_success_at = None
+        self.last_failure_at = None
         self.last_activity = time.time()
         self.last_health_check = None
 
@@ -64,9 +70,33 @@ class GPUWorker:
     def queue_capacity(self):
         return self.queue.maxsize
 
+    @property
+    def failure_rate(self):
+        with self.lock:
+            total = self.success_count + self.failed_count
+            if total == 0:
+                return 0.0
+            return self.failed_count / total
+
+    @property
+    def utilization(self):
+        with self.lock:
+            if self.max_in_flight <= 0:
+                return 1.0
+            return min(self.in_flight / self.max_in_flight, 1.0)
+
+    @property
+    def oldest_in_flight_age(self):
+        with self.lock:
+            if not self.active_request_starts:
+                return 0.0
+            return max(0.0, time.time() - min(self.active_request_starts.values()))
+
     def can_accept(self):
         with self.lock:
             if self.state == WorkerState.UNHEALTHY:
+                return False
+            if self.in_flight >= self.max_in_flight:
                 return False
             return self.queue.qsize() < self.queue.maxsize
 
@@ -81,11 +111,20 @@ class GPUWorker:
         self.state = state
         self.is_healthy = state in {WorkerState.HEALTHY, WorkerState.DEGRADED, WorkerState.RECOVERING}
 
-    def _record_success(self):
+    def _record_success(self, latency=None):
         with self.lock:
+            self.success_count += 1
             self.fail_count = 0
             self.consecutive_successes += 1
             self.last_error = None
+            self.last_success_at = time.time()
+
+            if latency is not None:
+                if self.ewma_latency <= 0:
+                    self.ewma_latency = latency
+                else:
+                    alpha = config.LB_EWMA_ALPHA
+                    self.ewma_latency = (alpha * latency) + ((1 - alpha) * self.ewma_latency)
 
             if self.state in {WorkerState.DEGRADED, WorkerState.RECOVERING}:
                 if self.consecutive_successes >= self.recovery_successes:
@@ -97,6 +136,7 @@ class GPUWorker:
             self.fail_count += 1
             self.consecutive_successes = 0
             self.last_error = str(error)
+            self.last_failure_at = time.time()
 
             if self.fail_count >= self.max_failures:
                 self._set_state(WorkerState.UNHEALTHY)
@@ -129,6 +169,7 @@ class GPUWorker:
             self.queue.put_nowait(request)
             with self.lock:
                 self.in_flight += 1
+                self.active_request_starts[request.id] = time.time()
             return True
         except Full as exc:
             raise RuntimeError(f"Worker {self.id} queue is full") from exc
@@ -159,7 +200,7 @@ class GPUWorker:
                     self.processed_count += 1
                     self.total_latency += latency
                     self.avg_latency = self.total_latency / self.processed_count
-                self._record_success()
+                self._record_success(latency)
 
                 request.callback(
                     Response(
@@ -188,6 +229,7 @@ class GPUWorker:
             finally:
                 with self.lock:
                     self.in_flight = max(0, self.in_flight - 1)
+                    self.active_request_starts.pop(request.id, None)
                 self.queue.task_done()
 
     # -----------------------
@@ -238,13 +280,21 @@ class GPUWorker:
             "queue_size": self.queue.qsize(),
             "queue_capacity": self.queue_capacity,
             "in_flight": self.in_flight,
+            "oldest_in_flight_age": self.oldest_in_flight_age,
+            "max_in_flight": self.max_in_flight,
+            "utilization": self.utilization,
             "processed_count": self.processed_count,
             "failed_count": self.failed_count,
+            "success_count": self.success_count,
             "avg_latency": self.avg_latency,
+            "ewma_latency": self.ewma_latency,
+            "failure_rate": self.failure_rate,
             "fail_count": self.fail_count,
             "consecutive_successes": self.consecutive_successes,
             "last_error": self.last_error,
             "circuit_opened_at": self.circuit_opened_at,
+            "last_success_at": self.last_success_at,
+            "last_failure_at": self.last_failure_at,
             "last_activity": self.last_activity,
             "last_health_check": self.last_health_check,
         }

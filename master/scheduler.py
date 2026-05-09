@@ -175,7 +175,8 @@ class Scheduler:
         return {
             "worker_health": dict(self.worker_health),
             "active_tasks": len(self.active_tasks),
-            "total_requests": self.metrics.total_requests
+            "total_requests": self.metrics.total_requests,
+            "load_balancer": self.lb.get_status() if hasattr(self.lb, "get_status") else {},
         }
 
     # -------------------------

@@ -177,3 +177,156 @@ start-ollama
 
 7. After `WORKER_FAILURE_COOLDOWN`, health checks should move it through
    `RECOVERING` back to `HEALTHY`.
+
+## Phase 3 adaptive load balancing
+
+The controller now supports policy-based routing with adaptive scoring. The
+default policy is `adaptive`, which considers:
+
+- worker health state
+- in-flight requests
+- oldest in-flight request age
+- queue pressure
+- EWMA latency
+- observed failure rate
+- recovery/degraded penalties
+
+Run the recommended Thunder test:
+
+```bash
+export LLM_SERVER_URLS="https://vm-a-11434.thundercompute.net,https://vm-b-11434.thundercompute.net"
+export LLM_MODEL=tinyllama
+export LLM_HEALTH_PATH=/api/version
+export NUM_WORKERS=2
+export NUM_USERS=20
+export LOAD_TEST_THREADS=6
+export LLM_MAX_TOKENS=16
+export SCHEDULER_REQUEST_TIMEOUT=120
+export WORKER_THREADS=2
+export WORKER_QUEUE_SIZE=8
+export WORKER_MAX_IN_FLIGHT=10
+export LOAD_BALANCER_POLICY=adaptive
+python main.py
+```
+
+Compare policies:
+
+```bash
+export LOAD_BALANCER_POLICY=round_robin
+python main.py
+
+export LOAD_BALANCER_POLICY=least_connections
+python main.py
+
+export LOAD_BALANCER_POLICY=adaptive
+python main.py
+```
+
+Useful tuning knobs:
+
+```bash
+export LB_UTILIZATION_WEIGHT=3.0
+export LB_QUEUE_WEIGHT=1.5
+export LB_LATENCY_WEIGHT=2.5
+export LB_IN_FLIGHT_AGE_WEIGHT=0.5
+export LB_FAILURE_WEIGHT=4.0
+export LB_STATE_DEGRADED_PENALTY=5.0
+export LB_STATE_RECOVERING_PENALTY=2.0
+export LB_EWMA_ALPHA=0.35
+```
+
+If one Thunder worker is much slower than another, `adaptive` should gradually
+favor the faster worker while still using both when capacity allows.
+
+## Monitoring, GPU utilization, and formal evidence
+
+Start one GPU metrics agent on each Thunder VM:
+
+```bash
+cd distributedProject
+git pull origin phase1-thunder-gpu-workers
+python3 scripts/gpu_metrics_agent.py
+```
+
+The agent listens on port `9100` and exposes:
+
+```text
+/health
+/metrics
+```
+
+Forward the metrics port for each Thunder VM from your local machine:
+
+```bash
+tnr ports forward <instance_id> --add 9100
+tnr ports list
+```
+
+Test the metrics URLs:
+
+```bash
+curl https://vm-a-9100.thundercompute.net/metrics
+curl https://vm-b-9100.thundercompute.net/metrics
+```
+
+Run one monitored load test:
+
+```bash
+export LLM_SERVER_URLS="https://vm-a-11434.thundercompute.net,https://vm-b-11434.thundercompute.net"
+export GPU_METRICS_URLS="https://vm-a-9100.thundercompute.net,https://vm-b-9100.thundercompute.net"
+export LLM_MODEL=tinyllama
+export LLM_HEALTH_PATH=/api/version
+export NUM_WORKERS=2
+export NUM_USERS=100
+export LOAD_TEST_THREADS=20
+export LLM_MAX_TOKENS=16
+export SCHEDULER_REQUEST_TIMEOUT=180
+export WORKER_THREADS=2
+export WORKER_QUEUE_SIZE=8
+export WORKER_MAX_IN_FLIGHT=10
+export LOAD_BALANCER_POLICY=adaptive
+export ENABLE_MONITORING_DASHBOARD=true
+python main.py
+```
+
+Open the dashboard while the test runs:
+
+```text
+http://127.0.0.1:8080
+```
+
+Each run writes evidence to:
+
+```text
+evaluation_results/<run_id>/
+```
+
+The evidence folder contains:
+
+```text
+latencies.csv
+metrics_summary.json
+run_evidence.json
+gpu_metrics_history.csv
+gpu_metrics_history.json
+```
+
+Run a formal evaluation matrix:
+
+```bash
+export LLM_SERVER_URLS="https://vm-a-11434.thundercompute.net,https://vm-b-11434.thundercompute.net"
+export GPU_METRICS_URLS="https://vm-a-9100.thundercompute.net,https://vm-b-9100.thundercompute.net"
+export LLM_MODEL=tinyllama
+export LLM_HEALTH_PATH=/api/version
+export LLM_MAX_TOKENS=16
+export SCHEDULER_REQUEST_TIMEOUT=180
+export WORKER_THREADS=2
+export WORKER_QUEUE_SIZE=8
+export WORKER_MAX_IN_FLIGHT=10
+export LOAD_BALANCER_POLICY=adaptive
+export EVAL_MATRIX="50:10,100:20,250:40,500:80,1000:120"
+.venv/bin/python3.12 scripts/run_formal_evaluation.py
+```
+
+For the final report, include the generated CSV/JSON summaries plus screenshots
+of the live dashboard and Thunder `nvidia-smi`/metrics output.

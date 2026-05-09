@@ -1,6 +1,8 @@
 #lb/load_balancer.py
 import threading
 
+import config
+
 
 class LoadBalancer:
     def __init__(self, workers):
@@ -9,6 +11,8 @@ class LoadBalancer:
         self.lock = threading.Lock()
         self._rr_index = 0
         self.worker_health = {i: True for i in range(len(workers))}
+        self.assignment_counts = {i: 0 for i in range(len(workers))}
+        self.last_scores = {}
 
         print("[LB] Workers registered:")
         for i, w in enumerate(self.workers):
@@ -22,49 +26,140 @@ class LoadBalancer:
         return getattr(worker, attr, default)
 
     # ---------------------------
-    # SCORE FUNCTION (FIXED)
+    # WORKER SNAPSHOT
     # ---------------------------
-    def get_worker_score(self, worker):
-        if hasattr(worker, "can_accept") and not worker.can_accept():
-            return float("inf")
-        if not self._safe(worker, "is_healthy", True):
-            return float("inf")
-
+    def _worker_snapshot(self, worker_id, worker):
         queue_size = self._safe(worker, "queue_size", 0)
         queue_capacity = max(self._safe(worker, "queue_capacity", 1), 1)
         in_flight = self._safe(worker, "in_flight", 0)
+        oldest_in_flight_age = self._safe(worker, "oldest_in_flight_age", 0.0)
+        max_in_flight = max(self._safe(worker, "max_in_flight", queue_capacity), 1)
         avg_latency = self._safe(worker, "avg_latency", 0.0)
+        ewma_latency = self._safe(worker, "ewma_latency", avg_latency)
+        latency = ewma_latency if ewma_latency > 0 else avg_latency
+        failed_count = self._safe(worker, "failed_count", 0)
+        success_count = self._safe(worker, "success_count", self._safe(worker, "processed_count", 0))
+        total_results = success_count + failed_count
+        failure_rate = failed_count / total_results if total_results else 0.0
         state = self._safe(worker, "state", "HEALTHY")
-        state_penalty = {
-            "HEALTHY": 0.0,
-            "RECOVERING": 0.5,
-            "DEGRADED": 1.0,
-            "UNHEALTHY": float("inf"),
-        }.get(state, 0.0)
 
-        return (queue_size / queue_capacity) + (in_flight * 0.25) + (avg_latency * 0.05) + state_penalty
+        return {
+            "worker_id": worker_id,
+            "worker": worker,
+            "state": state,
+            "is_healthy": self._safe(worker, "is_healthy", True),
+            "can_accept": worker.can_accept() if hasattr(worker, "can_accept") else True,
+            "queue_size": queue_size,
+            "queue_capacity": queue_capacity,
+            "queue_pressure": min(queue_size / queue_capacity, 1.0),
+            "in_flight": in_flight,
+            "oldest_in_flight_age": oldest_in_flight_age,
+            "max_in_flight": max_in_flight,
+            "utilization": min(in_flight / max_in_flight, 1.0),
+            "latency": latency,
+            "failure_rate": failure_rate,
+            "assignments": self.assignment_counts.get(worker_id, 0),
+        }
 
     # ---------------------------
-    # GET BEST WORKER (FIXED)
+    # SCORE FUNCTION
+    # ---------------------------
+    def get_worker_score(self, worker, worker_id=None, min_latency=None):
+        worker_id = worker_id if worker_id is not None else -1
+        snapshot = self._worker_snapshot(worker_id, worker)
+        return self._score_snapshot(snapshot, min_latency)
+
+    def _score_snapshot(self, snapshot, min_latency=None):
+        if not snapshot["can_accept"] or not snapshot["is_healthy"]:
+            return float("inf")
+
+        if snapshot["state"] == "UNHEALTHY":
+            return float("inf")
+
+        if config.LOAD_BALANCER_POLICY == "round_robin":
+            return 0.0
+
+        if config.LOAD_BALANCER_POLICY == "least_connections":
+            return snapshot["in_flight"]
+
+        latency = snapshot["latency"]
+        if latency <= 0:
+            latency_ratio = 0.0
+        elif min_latency and min_latency > 0:
+            latency_ratio = latency / min_latency
+        else:
+            latency_ratio = latency
+
+        state_penalty = {
+            "HEALTHY": 0.0,
+            "RECOVERING": config.LB_STATE_RECOVERING_PENALTY,
+            "DEGRADED": config.LB_STATE_DEGRADED_PENALTY,
+            "UNHEALTHY": float("inf"),
+        }.get(snapshot["state"], 0.0)
+
+        return (
+            snapshot["utilization"] * config.LB_UTILIZATION_WEIGHT
+            + snapshot["queue_pressure"] * config.LB_QUEUE_WEIGHT
+            + latency_ratio * config.LB_LATENCY_WEIGHT
+            + snapshot["oldest_in_flight_age"] * config.LB_IN_FLIGHT_AGE_WEIGHT
+            + snapshot["failure_rate"] * config.LB_FAILURE_WEIGHT
+            + state_penalty
+        )
+
+    def _candidate_sort_key(self, snapshot):
+        if config.LOAD_BALANCER_POLICY == "round_robin":
+            return (snapshot["rr_distance"], snapshot["assignments"])
+        return (snapshot["score"], snapshot["rr_distance"], snapshot["assignments"])
+
+    def _is_available(self, snapshot):
+        return snapshot["score"] != float("inf")
+
+    def _min_observed_latency(self, snapshots):
+        latencies = [
+            item["latency"]
+            for item in snapshots
+            if item["latency"] and item["latency"] > 0
+        ]
+        return min(latencies) if latencies else None
+
+    # ---------------------------
+    # GET BEST WORKER
     # ---------------------------
     def get_worker_candidates(self, excluded_worker_ids=None):
         excluded_worker_ids = set(excluded_worker_ids or [])
-        healthy = [
-            (i, w) for i, w in enumerate(self.workers)
-            if i not in excluded_worker_ids and self.get_worker_score(w) != float("inf")
+        snapshots = [
+            self._worker_snapshot(i, w)
+            for i, w in enumerate(self.workers)
+            if i not in excluded_worker_ids
         ]
+        min_latency = self._min_observed_latency(snapshots)
+
+        for snapshot in snapshots:
+            snapshot["score"] = self._score_snapshot(snapshot, min_latency)
+            snapshot["rr_distance"] = (snapshot["worker_id"] - self._rr_index) % len(self.workers)
+
+        healthy = [item for item in snapshots if self._is_available(item)]
 
         if not healthy:
             raise RuntimeError("No healthy workers available")
 
-        healthy.sort(key=lambda x: (
-            self.get_worker_score(x[1]),
-            (x[0] - self._rr_index) % len(self.workers)
-        ))
-        return healthy
+        healthy.sort(key=self._candidate_sort_key)
+        self.last_scores = {
+            item["worker_id"]: {
+                "score": item["score"],
+                "state": item["state"],
+                "in_flight": item["in_flight"],
+                "oldest_in_flight_age": item["oldest_in_flight_age"],
+                "max_in_flight": item["max_in_flight"],
+                "latency": item["latency"],
+                "failure_rate": item["failure_rate"],
+            }
+            for item in snapshots
+        }
+        return [(item["worker_id"], item["worker"]) for item in healthy]
 
     # ---------------------------
-    # DISPATCH WITH RETRY (FIXED)
+    # DISPATCH WITH RETRY
     # ---------------------------
     def dispatch(self, request):
         last_error = None
@@ -75,10 +170,17 @@ class LoadBalancer:
 
             for worker_id, worker in candidates:
                 try:
-                    print(f"[LB] Request {request.id} -> Worker {worker_id}")
+                    score = self.last_scores.get(worker_id, {}).get("score", 0.0)
+                    in_flight = self._safe(worker, "in_flight", 0)
+                    max_in_flight = self._safe(worker, "max_in_flight", 1)
+                    print(
+                        f"[LB] Request {request.id} -> Worker {worker_id} "
+                        f"| score={score:.3f} | load={in_flight}/{max_in_flight}"
+                    )
                     worker.process(request)
                     self.last_assigned_worker = worker_id
                     request.assigned_worker_id = worker_id
+                    self.assignment_counts[worker_id] = self.assignment_counts.get(worker_id, 0) + 1
                     self._rr_index = (worker_id + 1) % len(self.workers)
                     return True
                 except Exception as exc:
@@ -100,19 +202,17 @@ class LoadBalancer:
         if hasattr(worker, "mark_timeout"):
             worker.mark_timeout(request_id)
 
+    def get_status(self):
+        with self.lock:
+            return {
+                "policy": config.LOAD_BALANCER_POLICY,
+                "assignment_counts": dict(self.assignment_counts),
+                "last_scores": dict(self.last_scores),
+            }
+
     # ---------------------------
     # MARK WORKER AS BAD
     # ---------------------------
     def _mark_worker_bad(self, worker_id):
         if worker_id is not None:
             self.worker_health[worker_id] = False
-
-    # ---------------------------
-    # SIMPLE METRICS UPDATE
-    # ---------------------------
-    """def _update_worker_stats(self, worker):
-        worker.processed_count = self._safe(worker, "processed_count", 0) + 1
-
-        # optional smoothing for latency
-        if hasattr(worker, "avg_latency"):
-            worker.avg_latency = worker.avg_latency * 0.9"""

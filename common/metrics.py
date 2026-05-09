@@ -60,6 +60,36 @@ class MetricsCollector:
         if not self.request_times:
             return 0
         return sum(self.request_times) / len(self.request_times)
+
+    def get_summary(self) -> dict:
+        with self.lock:
+            total_requests = self.total_requests
+            failed_requests = self.failed_requests
+            request_times = list(self.request_times)
+        elapsed = (datetime.now() - self.start_time).total_seconds()
+
+        success_rate = ((total_requests - failed_requests) / max(total_requests, 1))
+        if request_times:
+            sorted_times = sorted(request_times)
+            p50_latency = sorted_times[len(sorted_times) // 2]
+            p99_idx = int(len(sorted_times) * 0.99)
+            p99_latency = sorted_times[p99_idx] if p99_idx < len(sorted_times) else sorted_times[-1]
+            avg_latency = sum(request_times) / len(request_times)
+        else:
+            p50_latency = 0
+            p99_latency = 0
+            avg_latency = 0
+
+        return {
+            "total_requests": total_requests,
+            "failed_requests": failed_requests,
+            "success_rate": success_rate,
+            "throughput_req_per_sec": total_requests / elapsed if elapsed else 0,
+            "avg_latency_sec": avg_latency,
+            "p50_latency_sec": p50_latency,
+            "p99_latency_sec": p99_latency,
+            "timestamp": self.start_time.isoformat()
+        }
     
     def print_summary(self):
         """Print metrics to console"""
@@ -87,16 +117,7 @@ class MetricsCollector:
     
     def save_summary_json(self, filepath: str = "metrics_summary.json"):
         """Save summary statistics to JSON"""
-        summary = {
-            "total_requests": self.total_requests,
-            "failed_requests": self.failed_requests,
-            "success_rate": ((self.total_requests - self.failed_requests) / max(self.total_requests, 1)),
-            "throughput_req_per_sec": self.get_throughput(),
-            "avg_latency_sec": self.get_avg_latency(),
-            "p50_latency_sec": self.get_p50_latency(),
-            "p99_latency_sec": self.get_p99_latency(),
-            "timestamp": self.start_time.isoformat()
-        }
+        summary = self.get_summary()
         with open(filepath, 'w') as f:
             json.dump(summary, f, indent=2)
         print(f"✓ Summary saved to {filepath}")

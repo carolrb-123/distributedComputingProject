@@ -2,6 +2,7 @@
 Phase 3 Entry Point - Real RAG + Real LLM + Fault Tolerance
 """
 import config
+from common.gpu_metrics import GPUMetricsCollector
 from workers.gpu_worker import GPUWorker
 from lb.load_balancer import LoadBalancer
 from master.scheduler import Scheduler
@@ -11,7 +12,10 @@ from rag.embedding_pipeline import EmbeddingPipeline
 from rag.document_ingester import DocumentIngester
 from rag.retriever import initialize_retriever
 from fault_tolerance_test import run_fault_tolerance_tests
+from monitoring.dashboard import MonitoringDashboard
 import os
+import json
+from datetime import datetime
 
 def setup_rag_pipeline():
     """Initialize RAG components"""
@@ -54,12 +58,64 @@ def setup_rag_pipeline():
     
     print("[Main] RAG pipeline ready\n")
 
+def get_run_id():
+    if config.RUN_ID:
+        return config.RUN_ID
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def build_evidence_payload(run_id, metrics, scheduler, workers, lb, gpu_monitor):
+    return {
+        "run_id": run_id,
+        "created_at": datetime.now().isoformat(),
+        "config": {
+            "llm_server_urls": config.LLM_SERVER_URLS,
+            "gpu_metrics_urls": config.GPU_METRICS_URLS,
+            "llm_model": config.LLM_MODEL,
+            "num_workers": config.NUM_WORKERS,
+            "num_users": config.NUM_USERS,
+            "load_test_threads": config.LOAD_TEST_THREADS,
+            "worker_threads": config.WORKER_THREADS,
+            "worker_queue_size": config.WORKER_QUEUE_SIZE,
+            "worker_max_in_flight": config.WORKER_MAX_IN_FLIGHT,
+            "load_balancer_policy": config.LOAD_BALANCER_POLICY,
+            "scheduler_request_timeout": config.SCHEDULER_REQUEST_TIMEOUT,
+            "llm_max_tokens": config.LLM_MAX_TOKENS,
+            "run_fault_tolerance_tests": config.RUN_FAULT_TOLERANCE_TESTS,
+        },
+        "metrics": metrics.get_summary(),
+        "scheduler": scheduler.get_worker_status() if scheduler else {},
+        "workers": [worker.get_status() for worker in workers],
+        "load_balancer": lb.get_status() if hasattr(lb, "get_status") else {},
+        "gpu": gpu_monitor.snapshot() if gpu_monitor else {},
+    }
+
+def save_evidence(run_id, metrics, scheduler, workers, lb, gpu_monitor):
+    evidence_dir = os.path.join(config.EVIDENCE_DIR, run_id)
+    os.makedirs(evidence_dir, exist_ok=True)
+
+    metrics.save_to_csv(os.path.join(evidence_dir, "latencies.csv"))
+    metrics.save_summary_json(os.path.join(evidence_dir, "metrics_summary.json"))
+
+    payload = build_evidence_payload(run_id, metrics, scheduler, workers, lb, gpu_monitor)
+    with open(os.path.join(evidence_dir, "run_evidence.json"), "w") as f:
+        json.dump(payload, f, indent=2)
+
+    if gpu_monitor:
+        gpu_monitor.save_history_json(os.path.join(evidence_dir, "gpu_metrics_history.json"))
+        gpu_monitor.save_history_csv(os.path.join(evidence_dir, "gpu_metrics_history.csv"))
+
+    print(f"[Evidence] Saved run evidence to {evidence_dir}")
+    return evidence_dir
+
 def main():
     print("\n" + "="*70)
     print("PHASE 3: DISTRIBUTED LLM SYSTEM WITH RAG & FAULT TOLERANCE")
     print("="*70 + "\n")
     
+    run_id = get_run_id()
     metrics = MetricsCollector()
+    gpu_monitor = GPUMetricsCollector()
+    dashboard = None
     
     setup_rag_pipeline()
     
@@ -83,6 +139,26 @@ def main():
     print("[Main] Creating scheduler...")
     scheduler = Scheduler(lb, metrics)
     print("[Main] Scheduler ready\n")
+
+    if config.GPU_METRICS_URLS:
+        print(f"[Main] Starting GPU metrics polling for {len(config.GPU_METRICS_URLS)} workers...")
+        gpu_monitor.start()
+        gpu_monitor.poll_once()
+        print("[Main] GPU metrics polling ready\n")
+    else:
+        print("[Main] GPU metrics polling disabled. Set GPU_METRICS_URLS to enable.\n")
+
+    if config.ENABLE_MONITORING_DASHBOARD:
+        dashboard = MonitoringDashboard(
+            config.MONITORING_HOST,
+            config.MONITORING_PORT,
+            metrics,
+            scheduler,
+            workers,
+            lb,
+            gpu_monitor,
+        )
+        dashboard.start()
 
     # ─────────────────────────────────────────
     # FAULT TOLERANCE TESTS (run before main load test)
@@ -113,13 +189,28 @@ def main():
             f"State: {status.get('state', 'UNKNOWN')}, "
             f"Healthy: {status['is_healthy']}, "
             f"In-flight: {status.get('in_flight', 0)}, "
+            f"Oldest Age: {status.get('oldest_in_flight_age', 0):.1f}s, "
+            f"Utilization: {status.get('utilization', 0):.2f}, "
+            f"EWMA Latency: {status.get('ewma_latency', 0):.3f}s, "
+            f"Failure Rate: {status.get('failure_rate', 0):.2f}, "
             f"Failures: {status.get('failed_count', 0)}"
         )
+
+    lb_status = lb.get_status() if hasattr(lb, "get_status") else {}
+    if lb_status:
+        print("\nLoad Balancer Status:")
+        print(f"  Policy: {lb_status.get('policy')}")
+        print(f"  Assignments: {lb_status.get('assignment_counts')}")
     
     print("\n" + "="*70)
     print("PHASE 3 COMPLETE")
     print("="*70 + "\n")
     
+    save_evidence(run_id, metrics, scheduler, workers, lb, gpu_monitor)
+
+    if dashboard:
+        dashboard.stop()
+    gpu_monitor.stop()
     scheduler.shutdown()
 
 if __name__ == "__main__":
