@@ -108,7 +108,13 @@ def main():
     print("\nWorker Status:")
     for worker in workers:
         status = worker.get_status()
-        print(f"  Worker {status['id']}: {status['processed_count']} requests, Healthy: {status['is_healthy']}")
+        print(
+            f"  Worker {status['id']}: {status['processed_count']} requests, "
+            f"State: {status.get('state', 'UNKNOWN')}, "
+            f"Healthy: {status['is_healthy']}, "
+            f"In-flight: {status.get('in_flight', 0)}, "
+            f"Failures: {status.get('failed_count', 0)}"
+        )
     
     print("\n" + "="*70)
     print("PHASE 3 COMPLETE")

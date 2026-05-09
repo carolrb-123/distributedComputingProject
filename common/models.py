@@ -7,8 +7,13 @@ class Request:
         self.query = query
         self.callback = callback
         self.assigned_worker_id = None
+        self.excluded_worker_ids = set()
+        self.attempt = 0
 @dataclass
 class Response:
     id: int
     result: str
     latency: float
+    worker_id: int = None
+    status: str = "OK"
+    error: str = None

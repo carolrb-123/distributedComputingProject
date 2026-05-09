@@ -134,3 +134,46 @@ target Phase 1 GPU setup:
 ```bash
 BUILD_CUDA=off PORT=8888 MODEL_DIR=/ephemeral/models ./scripts/run_thunder_llama_server.sh
 ```
+
+## Phase 2 fault-tolerance validation
+
+The controller now has per-worker circuit breakers, cooldowns, recovery states,
+and retry-on-different-worker behavior for explicit worker failures.
+
+Run a simulated circuit-breaker test:
+
+```bash
+export LLM_SERVER_URLS="https://vm-a-11434.thundercompute.net,https://vm-b-11434.thundercompute.net"
+export LLM_MODEL=tinyllama
+export LLM_HEALTH_PATH=/api/version
+export NUM_WORKERS=2
+export NUM_USERS=4
+export LOAD_TEST_THREADS=2
+export LLM_MAX_TOKENS=16
+export SCHEDULER_REQUEST_TIMEOUT=120
+export FAULT_TOLERANCE_TEST_REQUESTS=4
+export RUN_FAULT_TOLERANCE_TESTS=true
+python main.py
+```
+
+For a real Thunder node failure test:
+
+1. Keep the controller running with both worker URLs configured.
+2. Connect to one Thunder VM.
+3. Stop Ollama on that VM:
+
+```bash
+pkill ollama
+```
+
+4. Send a small load test from the controller.
+5. Confirm the unhealthy worker enters `UNHEALTHY` and traffic routes to the
+   other worker.
+6. Restart Ollama on the VM:
+
+```bash
+start-ollama
+```
+
+7. After `WORKER_FAILURE_COOLDOWN`, health checks should move it through
+   `RECOVERING` back to `HEALTHY`.

@@ -50,33 +50,57 @@ class Scheduler:
                     "worker_id": None
                 }
 
-            # FIX: safe dispatch with retry
             response = None
             last_error = None
+            attempted_workers = set()
+            max_attempts = max(1, config.SCHEDULER_MAX_ATTEMPTS)
 
-            for _ in range(2):  # retry once
+            for attempt in range(1, max_attempts + 1):
                 try:
                     event = threading.Event()
                     result_container = {}
+                    request.attempt = attempt
 
-                    def callback(response):
-                        result_container["response"] = response
+                    def callback(worker_response, expected_attempt=attempt):
+                        if expected_attempt != request.attempt:
+                            return
+                        result_container["response"] = worker_response
                         event.set()
 
                     request.callback = callback
+                    request.excluded_worker_ids = set(attempted_workers)
 
                     self.lb.dispatch(request)
+                    worker_id = request.assigned_worker_id
+                    attempted_workers.add(worker_id)
+
+                    with self.lock:
+                        self.active_tasks[request.id]["worker_id"] = worker_id
 
                     timed_out = not event.wait(timeout=config.SCHEDULER_REQUEST_TIMEOUT)
                     if timed_out:
-                        raise RuntimeError(
+                        self.lb.mark_worker_timeout(worker_id, request.id)
+                        last_error = RuntimeError(
                             f"Request {request.id} timed out after "
-                            f"{config.SCHEDULER_REQUEST_TIMEOUT}s"
+                            f"{config.SCHEDULER_REQUEST_TIMEOUT}s on worker {worker_id}"
                         )
+                        break
+
                     response = result_container["response"]
+
+                    if response.status != "OK" and attempt < max_attempts:
+                        last_error = RuntimeError(response.error or response.result)
+                        attempted_workers.add(response.worker_id)
+                        response = None
+                        time.sleep(0.2)
+                        continue
+
                     break
+
                 except Exception as e:
                     last_error = e
+                    if not config.TASK_REASSIGNMENT_ENABLED:
+                        break
                     time.sleep(0.2)
 
             if response is None:
@@ -90,9 +114,10 @@ class Scheduler:
             latency = time.time() - start
             response.latency = latency
 
-            self.metrics.record_latency(request.id, latency)
-            if str(response.result).startswith("ERROR"):
-                self.metrics.record_failure()
+            if response.status == "OK" and not str(response.result).startswith("ERROR"):
+                self.metrics.record_success(request.id, latency)
+            else:
+                self.metrics.record_failure(request.id, latency)
 
             print(f"[Scheduler] Done {request.id} | {latency:.3f}s")
 
@@ -100,12 +125,15 @@ class Scheduler:
 
         except Exception as e:
             print(f"[Scheduler] ERROR {request.id}: {e}")
-            self.metrics.record_failure()
+            latency = time.time() - start
+            self.metrics.record_failure(request.id, latency)
 
             return Response(
                 id=request.id,
                 result=f"ERROR: {str(e)}",
-                latency=time.time() - start
+                latency=latency,
+                status="ERROR",
+                error=str(e),
             )
 
         finally:
@@ -130,8 +158,10 @@ class Scheduler:
                     if hasattr(worker, "last_ping"):
                         self.worker_last_ping[worker_id] = worker.last_ping
 
-                    self.worker_health[worker_id] = (
-                        "HEALTHY" if is_healthy else "FAILED"
+                    self.worker_health[worker_id] = getattr(
+                        worker,
+                        "state",
+                        "HEALTHY" if is_healthy else "UNHEALTHY"
                     )
 
                 except Exception as e:

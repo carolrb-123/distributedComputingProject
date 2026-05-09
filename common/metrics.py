@@ -1,6 +1,7 @@
 #common/metrics.py
 import json
 from datetime import datetime
+import threading
 from typing import Dict, List
 
 class MetricsCollector:
@@ -10,16 +11,26 @@ class MetricsCollector:
         self.start_time = datetime.now()
         self.total_requests = 0
         self.failed_requests = 0
+        self.lock = threading.Lock()
         
     def record_latency(self, request_id: int, latency: float):
         """Record latency for a request"""
-        self.latencies[request_id] = latency
-        self.request_times.append(latency)
-        self.total_requests += 1
+        with self.lock:
+            self.latencies[request_id] = latency
+            self.request_times.append(latency)
+            self.total_requests += 1
+
+    def record_success(self, request_id: int, latency: float):
+        self.record_latency(request_id, latency)
         
-    def record_failure(self):
+    def record_failure(self, request_id: int = None, latency: float = None):
         """Record a failed request"""
-        self.failed_requests += 1
+        with self.lock:
+            self.failed_requests += 1
+            self.total_requests += 1
+            if request_id is not None and latency is not None:
+                self.latencies[request_id] = latency
+                self.request_times.append(latency)
         
     def get_throughput(self) -> float:
         """Calculate requests per second"""
