@@ -3,6 +3,7 @@ import threading
 import time
 from typing import Dict
 
+import config
 from common.models import Request, Response
 from lb.load_balancer import LoadBalancer
 from common.metrics import MetricsCollector
@@ -66,9 +67,12 @@ class Scheduler:
 
                     self.lb.dispatch(request)
 
-                    timed_out = not event.wait(timeout=30)
+                    timed_out = not event.wait(timeout=config.SCHEDULER_REQUEST_TIMEOUT)
                     if timed_out:
-                        raise RuntimeError(f"Request {request.id} timed out after 30s")
+                        raise RuntimeError(
+                            f"Request {request.id} timed out after "
+                            f"{config.SCHEDULER_REQUEST_TIMEOUT}s"
+                        )
                     response = result_container["response"]
                     break
                 except Exception as e:
@@ -78,7 +82,7 @@ class Scheduler:
             if response is None:
                 raise RuntimeError(f"Dispatch failed: {last_error}")
 
-            worker_id = self.lb.last_assigned_worker
+            worker_id = getattr(request, "assigned_worker_id", self.lb.last_assigned_worker)
 
             with self.lock:
                 self.active_tasks[request.id]["worker_id"] = worker_id
@@ -87,6 +91,8 @@ class Scheduler:
             response.latency = latency
 
             self.metrics.record_latency(request.id, latency)
+            if str(response.result).startswith("ERROR"):
+                self.metrics.record_failure()
 
             print(f"[Scheduler] Done {request.id} | {latency:.3f}s")
 
@@ -111,12 +117,14 @@ class Scheduler:
     # -------------------------
     def _monitor(self):
         while self.monitoring:
-            time.sleep(3)
+            time.sleep(config.WORKER_HEALTH_CHECK_INTERVAL)
 
             for worker_id, worker in enumerate(self.lb.workers):
                 try:
-                    # FIX: safe health detection
-                    is_healthy = getattr(worker, "is_healthy", True)
+                    if hasattr(worker, "health_check"):
+                        is_healthy = worker.health_check()
+                    else:
+                        is_healthy = getattr(worker, "is_healthy", True)
 
                     # optional heartbeat tracking
                     if hasattr(worker, "last_ping"):

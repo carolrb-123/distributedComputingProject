@@ -1,8 +1,7 @@
 #client/load_generator.py
 from concurrent.futures import ThreadPoolExecutor
 from common.models import Request
-import time
-from concurrent.futures import ThreadPoolExecutor
+import config
 
 def simulate_user(scheduler, user_id):
     request = Request(id=user_id, query=f"Query{user_id}")
@@ -13,7 +12,7 @@ def simulate_user(scheduler, user_id):
 
 
 def run_load_test(scheduler, num_users=1000):
-    with ThreadPoolExecutor(max_workers=200) as executor:
+    with ThreadPoolExecutor(max_workers=config.LOAD_TEST_THREADS) as executor:
         futures = [
             executor.submit(simulate_user, scheduler, i)
             for i in range(num_users)

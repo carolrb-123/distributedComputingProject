@@ -64,8 +64,17 @@ def main():
     setup_rag_pipeline()
     
     print("[Main] Creating workers...")
-    workers = [GPUWorker(i) for i in range(config.NUM_WORKERS)]
+    workers = [
+        GPUWorker(
+            i,
+            config.LLM_SERVER_URLS[i % len(config.LLM_SERVER_URLS)]
+        )
+        for i in range(config.NUM_WORKERS)
+    ]
     print(f"[Main] Created {config.NUM_WORKERS} workers\n")
+    for worker in workers:
+        print(f"[Main] Worker {worker.id} -> {worker.server_url}")
+    print()
     
     print("[Main] Creating load balancer...")
     lb = LoadBalancer(workers)
@@ -78,8 +87,11 @@ def main():
     # ─────────────────────────────────────────
     # FAULT TOLERANCE TESTS (run before main load test)
     # ─────────────────────────────────────────
-    print("[Main] Running fault tolerance tests...\n")
-    run_fault_tolerance_tests(scheduler, lb)
+    if config.RUN_FAULT_TOLERANCE_TESTS:
+        print("[Main] Running fault tolerance tests...\n")
+        run_fault_tolerance_tests(scheduler, lb)
+    else:
+        print("[Main] Skipping fault tolerance tests. Set RUN_FAULT_TOLERANCE_TESTS=true to enable.\n")
 
     # ─────────────────────────────────────────
     # MAIN LOAD TEST

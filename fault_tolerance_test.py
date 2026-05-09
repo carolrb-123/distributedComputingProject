@@ -25,6 +25,9 @@ class FaultToleranceTest:
         PHASE 1: Kill one worker and send requests
         Expected: System detects unhealthy worker, routes to others
         """
+        if len(self.lb.workers) < 2:
+            raise RuntimeError("Fault tolerance test requires at least 2 workers")
+
         print("\n" + "="*70)
         print("FAULT TOLERANCE TEST - PHASE 1: NODE FAILURE DETECTION")
         print("="*70)
@@ -44,7 +47,7 @@ class FaultToleranceTest:
         request_count = 0
         success_count = 0
         failed_count = 0
-        worker_assignments = {0: 0, 1: 0, 2: 0, 3: 0}
+        worker_assignments = {i: 0 for i in range(len(self.lb.workers))}
         
         start_time = time.time()
         
@@ -139,7 +142,7 @@ class FaultToleranceTest:
         request_count = 0
         success_count = 0
         failed_count = 0
-        worker_assignments = {0: 0, 1: 0, 2: 0, 3: 0}
+        worker_assignments = {i: 0 for i in range(len(self.lb.workers))}
         
         start_time = time.time()
         
@@ -200,7 +203,7 @@ class FaultToleranceTest:
             print(f"\n  ✗ ASSERTION FAILED: Worker 1 received 0 requests (should have received some)")
         
         # ASSERTION: Load should be roughly balanced (within 20% variance)
-        avg_load = request_count / 4
+        avg_load = request_count / max(len(worker_assignments), 1)
         max_load = max(worker_assignments.values())
         min_load = min(worker_assignments.values())
         balance = (max_load - min_load) / avg_load * 100 if avg_load > 0 else 0

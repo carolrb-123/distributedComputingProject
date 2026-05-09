@@ -4,10 +4,10 @@
 
 A distributed LLM inference system featuring:
 - Retrieval-Augmented Generation (RAG via FAISS)
-- Load balancing across workers
-- Multiple CPU workers with concurrent processing
+- Load balancing across local or remote GPU worker endpoints
+- Multiple concurrent workers backed by llama.cpp-compatible HTTP servers
 - Fault tolerance & health monitoring
-- Multi-server inference using llama.cpp with TinyLlama
+- Multi-server inference using llama.cpp with TinyLlama or another GGUF model
 
 ## System Architecture
     Client
@@ -16,20 +16,21 @@ A distributed LLM inference system featuring:
       ↓
     Load Balancer
       ↓
-    GPU Workers (threaded)
+    GPU Worker Adapters
+      ↓
+    Remote llama.cpp Servers (local or Thunder GPU VMs)
       ↓
     RAG (FAISS)
-      ↓
-    Multiple llama.cpp Servers
 ## Features
 
 - ✅ Parallel request handling via threaded workers
-- ✅ Multi-server LLM inference (true parallelism across 4 servers)
-- ✅ Worker health monitoring & automatic recovery
+- ✅ Multi-server LLM inference across configurable HTTP endpoints
+- ✅ Worker health monitoring via each endpoint's `/health`
 - ✅ Fault tolerance with task reassignment
 - ✅ Metrics collection (latency, throughput, success rate)
 - ✅ Modular architecture (Scheduler, Load Balancer, Workers, LLM, RAG)
-- ✅ Handles 1000+ concurrent requests
+- ✅ Load-testable with configurable concurrency
+- ✅ Thunder Compute Phase 1 deployment guide in `docs/thunder_phase1.md`
 
 ---
 
@@ -198,16 +199,14 @@ curl http://localhost:8888/v1/chat/completions \
 
 ### 8. Configure Project
 
-The project is already configured to use all 4 servers. In `workers/gpu_worker.py`:
+The project uses environment variables for worker endpoints. For local testing:
 
-```python
-LLM_URLS = [
-    "http://localhost:8888",
-    "http://localhost:8889",
-    "http://localhost:8890",
-    "http://localhost:8891"
-]
+```bash
+export LLM_SERVER_URLS="http://localhost:8888,http://localhost:8889,http://localhost:8890,http://localhost:8891"
+export NUM_WORKERS=4
 ```
+
+For Thunder Compute GPU VMs, see `docs/thunder_phase1.md`.
 
 ### 9. Run the Project
 
@@ -218,9 +217,9 @@ python main.py
 ```
 
 **Expected Output:**
-- System will dispatch 1000 concurrent requests
-- Load balancer distributes across 4 workers
-- Workers use all 4 LLM servers
+- System will dispatch requests based on `NUM_USERS`
+- Load balancer distributes across configured workers
+- Each logical worker maps to one configured LLM server URL
 - Real-time logs show request processing, worker health, and fault tolerance
 - Final metrics report saved to `metrics.csv` and `metrics_summary.json`
 
@@ -233,6 +232,7 @@ Edit `config.py` to adjust:
 ```python
 NUM_WORKERS = 4              # Number of worker nodes
 NUM_USERS = 1000             # Concurrent requests to simulate
+LLM_SERVER_URLS = [...]       # Local or Thunder worker URLs
 LLM_TIMEOUT = 60             # Request timeout (seconds)
 WORKER_HEALTH_CHECK_INTERVAL = 2  # Health check frequency
 ```

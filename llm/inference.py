@@ -1,16 +1,13 @@
 #llm/inference.py
 import requests
 import config
-import threading
 import time
-LLM_LOCK = threading.Lock()
 
 
 def run_llm(query: str, context: str, server_url: str, session=None) -> str:
     prompt = f"""Context: {context}
-    max_tokens = 50  
 
-Question: {query}ll
+Question: {query}
 
 Answer:"""
 
@@ -26,8 +23,8 @@ def _call_llamacpp(prompt: str, server_url: str, session=None) -> str:
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.7,
-        "n_predict": 16
+        "temperature": config.LLM_TEMPERATURE,
+        "max_tokens": config.LLM_MAX_TOKENS,
     }
 
     client = session if session else requests  

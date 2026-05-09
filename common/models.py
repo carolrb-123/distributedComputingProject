@@ -6,6 +6,7 @@ class Request:
         self.id = id
         self.query = query
         self.callback = callback
+        self.assigned_worker_id = None
 @dataclass
 class Response:
     id: int
