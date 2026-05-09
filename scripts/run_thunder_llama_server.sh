@@ -13,9 +13,40 @@ BATCH_SIZE="${BATCH_SIZE:-512}"
 UBATCH_SIZE="${UBATCH_SIZE:-128}"
 PARALLEL="${PARALLEL:-4}"
 N_PREDICT="${N_PREDICT:-128}"
+BUILD_CUDA="${BUILD_CUDA:-auto}"
 
 echo "[Thunder worker] Checking GPU"
 nvidia-smi || true
+
+if [ "$BUILD_CUDA" = "auto" ]; then
+  if command -v nvcc >/dev/null 2>&1; then
+    BUILD_CUDA="on"
+  elif [ -x /usr/local/cuda/bin/nvcc ]; then
+    export PATH="/usr/local/cuda/bin:$PATH"
+    export CUDACXX="/usr/local/cuda/bin/nvcc"
+    BUILD_CUDA="on"
+  else
+    cat <<'EOF'
+[Thunder worker] CUDA compiler nvcc was not found.
+
+llama.cpp's CUDA backend must be compiled with nvcc. On Thunder, use a
+Production-mode Base instance for full CUDA build compatibility, or install a
+CUDA toolkit that provides nvcc on this VM.
+
+Quick checks:
+  which nvcc
+  ls -l /usr/local/cuda/bin/nvcc
+  nvidia-smi
+
+Temporary CPU-only fallback:
+  BUILD_CUDA=off ./scripts/run_thunder_llama_server.sh
+EOF
+    exit 1
+  fi
+elif [ "$BUILD_CUDA" = "on" ] && [ -x /usr/local/cuda/bin/nvcc ]; then
+  export PATH="/usr/local/cuda/bin:$PATH"
+  export CUDACXX="${CUDACXX:-/usr/local/cuda/bin/nvcc}"
+fi
 
 if [ ! -d "$LLAMA_CPP_DIR/.git" ]; then
   echo "[Thunder worker] Cloning llama.cpp into $LLAMA_CPP_DIR"
@@ -23,8 +54,14 @@ if [ ! -d "$LLAMA_CPP_DIR/.git" ]; then
 fi
 
 cd "$LLAMA_CPP_DIR"
-echo "[Thunder worker] Building llama.cpp with CUDA"
-cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+if [ "$BUILD_CUDA" = "off" ]; then
+  echo "[Thunder worker] Building llama.cpp CPU-only"
+  cmake -B build -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
+  N_GPU_LAYERS=0
+else
+  echo "[Thunder worker] Building llama.cpp with CUDA"
+  cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+fi
 cmake --build build --config Release -j "$(nproc)"
 
 mkdir -p "$MODEL_DIR"

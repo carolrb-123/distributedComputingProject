@@ -128,10 +128,13 @@ class GPUWorker:
     # -----------------------
     def health_check(self):
         self.last_health_check = time.time()
+        health_path = config.LLM_HEALTH_PATH
+        if not health_path.startswith("/"):
+            health_path = f"/{health_path}"
 
         try:
             response = requests.get(
-                f"{self.server_url}/health",
+                f"{self.server_url}{health_path}",
                 timeout=config.LLM_HEALTH_TIMEOUT,
             )
             response.raise_for_status()

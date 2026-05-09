@@ -4,6 +4,42 @@ This project now treats each configured LLM endpoint as a logical GPU worker.
 The scheduler and load balancer can run locally while inference runs on one or
 more Thunder Compute GPU VMs.
 
+## Fast path: Thunder Ollama API workers
+
+This avoids compiling llama.cpp on every VM. Create each Thunder instance with
+the `ollama` template, then connect to it and run:
+
+```bash
+start-ollama
+ollama pull tinyllama
+```
+
+Forward Ollama's API port:
+
+```bash
+tnr ports forward <instance_id> --add 11434
+tnr ports list
+```
+
+Run the controller with the forwarded Ollama URLs:
+
+```bash
+export LLM_SERVER_URLS="https://vm-a-11434.thundercompute.net,https://vm-b-11434.thundercompute.net"
+export LLM_MODEL=tinyllama
+export LLM_HEALTH_PATH=/api/version
+export NUM_WORKERS=2
+export NUM_USERS=50
+export LOAD_TEST_THREADS=20
+export RUN_FAULT_TOLERANCE_TESTS=false
+python main.py
+```
+
+Ollama exposes an OpenAI-compatible `/v1/chat/completions` endpoint, so the
+project can use it as a real remote inference worker while skipping local CUDA
+compilation.
+
+## Custom path: Build llama.cpp workers
+
 ## 1. Start one llama.cpp server per Thunder VM
 
 On each Thunder VM:
@@ -67,3 +103,34 @@ the number of URLs.
   dependencies if compatibility issues appear.
 - Docker support on Thunder is experimental. For Phase 1, run llama.cpp
   directly on the VM.
+
+## CUDA compiler troubleshooting
+
+If llama.cpp fails with `CMAKE_CUDA_COMPILER-NOTFOUND`, CMake cannot find
+`nvcc`, the CUDA compiler.
+
+Check:
+
+```bash
+which nvcc
+ls -l /usr/local/cuda/bin/nvcc
+nvidia-smi
+```
+
+If `nvcc` exists under `/usr/local/cuda/bin`, expose it before running the
+worker script:
+
+```bash
+export PATH=/usr/local/cuda/bin:$PATH
+export CUDACXX=/usr/local/cuda/bin/nvcc
+PORT=8888 MODEL_DIR=/ephemeral/models ./scripts/run_thunder_llama_server.sh
+```
+
+If `nvcc` is missing, use a Thunder Production-mode Base instance. llama.cpp's
+CUDA backend is compiled from CUDA source and needs full CUDA toolkit/compiler
+compatibility. A CPU-only fallback is available for debugging, but it is not the
+target Phase 1 GPU setup:
+
+```bash
+BUILD_CUDA=off PORT=8888 MODEL_DIR=/ephemeral/models ./scripts/run_thunder_llama_server.sh
+```

@@ -20,6 +20,7 @@ Answer:"""
 
 def _call_llamacpp(prompt: str, server_url: str, session=None) -> str:
     payload = {
+        "model": config.LLM_MODEL,
         "messages": [
             {"role": "user", "content": prompt}
         ],
