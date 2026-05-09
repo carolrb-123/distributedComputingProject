@@ -170,6 +170,7 @@ class FaultToleranceTest:
             print(f"\n  ASSERTION FAILED: Worker 1 received 0 requests after recovery")
         
         # ASSERTION: Load should be roughly balanced (within 20% variance)
+        request_count = self.results["phase2_recovery"]["total_requests"]
         avg_load = request_count / max(len(worker_assignments), 1)
         max_load = max(worker_assignments.values())
         min_load = min(worker_assignments.values())

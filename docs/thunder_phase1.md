@@ -202,6 +202,8 @@ export NUM_USERS=20
 export LOAD_TEST_THREADS=6
 export LLM_MAX_TOKENS=16
 export SCHEDULER_REQUEST_TIMEOUT=120
+export SCHEDULER_ADMISSION_TIMEOUT=300
+export SCHEDULER_ADMISSION_POLL_INTERVAL=0.05
 export WORKER_THREADS=2
 export WORKER_QUEUE_SIZE=8
 export WORKER_MAX_IN_FLIGHT=10
@@ -281,6 +283,8 @@ export NUM_USERS=100
 export LOAD_TEST_THREADS=20
 export LLM_MAX_TOKENS=16
 export SCHEDULER_REQUEST_TIMEOUT=180
+export SCHEDULER_ADMISSION_TIMEOUT=300
+export SCHEDULER_ADMISSION_POLL_INTERVAL=0.05
 export WORKER_THREADS=2
 export WORKER_QUEUE_SIZE=8
 export WORKER_MAX_IN_FLIGHT=10
@@ -320,12 +324,44 @@ export LLM_MODEL=tinyllama
 export LLM_HEALTH_PATH=/api/version
 export LLM_MAX_TOKENS=16
 export SCHEDULER_REQUEST_TIMEOUT=180
+export SCHEDULER_ADMISSION_TIMEOUT=300
+export SCHEDULER_ADMISSION_POLL_INTERVAL=0.05
 export WORKER_THREADS=2
 export WORKER_QUEUE_SIZE=8
 export WORKER_MAX_IN_FLIGHT=10
 export LOAD_BALANCER_POLICY=adaptive
 export EVAL_MATRIX="50:10,100:20,250:40,500:80,1000:120"
 .venv/bin/python3.12 scripts/run_formal_evaluation.py
+```
+
+For 250+ concurrent-user cases, the load balancer will apply admission
+backpressure when both GPU workers are saturated. In the evidence JSON, check
+`load_balancer.admission.wait_count`, `avg_wait_time_sec`, and
+`timeout_count`.
+
+## Current 6-node Thunder pool
+
+The current scaled Thunder pool is:
+
+```text
+0 ye96jt3q  https://ye96jt3q-11434.thundercompute.net  https://ye96jt3q-9100.thundercompute.net
+1 a5oxns3p  https://a5oxns3p-11434.thundercompute.net  https://a5oxns3p-9100.thundercompute.net
+2 uw01uuc2  https://uw01uuc2-11434.thundercompute.net  https://uw01uuc2-9100.thundercompute.net
+3 xkj8xszu  https://xkj8xszu-11434.thundercompute.net  https://xkj8xszu-9100.thundercompute.net
+4 hz8878v2  https://hz8878v2-11434.thundercompute.net  https://hz8878v2-9100.thundercompute.net
+5 ow2vbplc  https://ow2vbplc-11434.thundercompute.net  https://ow2vbplc-9100.thundercompute.net
+```
+
+Run the six-worker formal evaluation:
+
+```bash
+scripts/run_thunder_6node_eval.sh
+```
+
+Or override just the matrix for a quick smoke test:
+
+```bash
+EVAL_ID=smoke_eval_6workers EVAL_MATRIX="24:12" scripts/run_thunder_6node_eval.sh
 ```
 
 For the final report, include the generated CSV/JSON summaries plus screenshots

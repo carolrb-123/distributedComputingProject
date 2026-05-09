@@ -5,6 +5,7 @@ import time
 import requests
 
 import config
+from common.errors import WorkerCapacityError
 from common.models import Response
 from llm.inference import run_llm
 from rag.retriever import retrieve_context
@@ -163,7 +164,7 @@ class GPUWorker:
     # -----------------------
     def process(self, request):
         if not self.can_accept():
-            raise RuntimeError(f"Worker {self.id} cannot accept work ({self.state})")
+            raise WorkerCapacityError(f"Worker {self.id} cannot accept work ({self.state})")
 
         try:
             self.queue.put_nowait(request)
@@ -172,7 +173,7 @@ class GPUWorker:
                 self.active_request_starts[request.id] = time.time()
             return True
         except Full as exc:
-            raise RuntimeError(f"Worker {self.id} queue is full") from exc
+            raise WorkerCapacityError(f"Worker {self.id} queue is full") from exc
 
     # -----------------------
     # WORKER LOOP

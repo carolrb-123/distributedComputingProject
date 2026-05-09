@@ -27,6 +27,7 @@ A distributed LLM inference system featuring:
 - ✅ Multi-server LLM inference across configurable HTTP endpoints
 - ✅ Worker health monitoring via each endpoint's `/health`
 - ✅ Fault tolerance with task reassignment
+- ✅ Admission backpressure when all GPU workers are saturated
 - ✅ Metrics collection (latency, throughput, success rate)
 - ✅ Modular architecture (Scheduler, Load Balancer, Workers, LLM, RAG)
 - ✅ Load-testable with configurable concurrency
@@ -288,6 +289,9 @@ After running, check:
 - Ensure all 4 llama.cpp servers are running
 - Check server health endpoints
 - Increase `LLM_TIMEOUT` in config.py
+- If errors appear only at high concurrency, increase
+  `SCHEDULER_ADMISSION_TIMEOUT` so requests wait for worker capacity instead
+  of timing out at admission.
 
 **500 Server Errors:**
 - Too much concurrent load on CPU

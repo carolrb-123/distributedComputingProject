@@ -79,6 +79,8 @@ def build_evidence_payload(run_id, metrics, scheduler, workers, lb, gpu_monitor)
             "worker_max_in_flight": config.WORKER_MAX_IN_FLIGHT,
             "load_balancer_policy": config.LOAD_BALANCER_POLICY,
             "scheduler_request_timeout": config.SCHEDULER_REQUEST_TIMEOUT,
+            "scheduler_admission_timeout": config.SCHEDULER_ADMISSION_TIMEOUT,
+            "scheduler_admission_poll_interval": config.SCHEDULER_ADMISSION_POLL_INTERVAL,
             "llm_max_tokens": config.LLM_MAX_TOKENS,
             "run_fault_tolerance_tests": config.RUN_FAULT_TOLERANCE_TESTS,
         },

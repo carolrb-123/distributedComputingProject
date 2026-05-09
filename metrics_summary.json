@@ -1,10 +1,10 @@
 {
-  "total_requests": 1100,
+  "total_requests": 1000,
   "failed_requests": 0,
   "success_rate": 1.0,
-  "throughput_req_per_sec": 10.575316747320601,
-  "avg_latency_sec": 14.435445008494638,
-  "p50_latency_sec": 14.64626407623291,
-  "p99_latency_sec": 39.49631094932556,
-  "timestamp": "2026-05-06T18:00:49.968489"
+  "throughput_req_per_sec": 6.90548380075011,
+  "avg_latency_sec": 13.931045921802522,
+  "p50_latency_sec": 3.371795892715454,
+  "p99_latency_sec": 115.46311521530151,
+  "timestamp": "2026-05-09T21:29:29.655372"
 }

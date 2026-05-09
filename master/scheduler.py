@@ -4,6 +4,7 @@ import time
 from typing import Dict
 
 import config
+from common.errors import AdmissionTimeoutError
 from common.models import Request, Response
 from lb.load_balancer import LoadBalancer
 from common.metrics import MetricsCollector
@@ -99,6 +100,8 @@ class Scheduler:
 
                 except Exception as e:
                     last_error = e
+                    if isinstance(e, AdmissionTimeoutError):
+                        break
                     if not config.TASK_REASSIGNMENT_ENABLED:
                         break
                     time.sleep(0.2)

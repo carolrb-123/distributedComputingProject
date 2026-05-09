@@ -1,7 +1,9 @@
 #lb/load_balancer.py
 import threading
+import time
 
 import config
+from common.errors import AdmissionTimeoutError, WorkerCapacityError
 
 
 class LoadBalancer:
@@ -13,6 +15,10 @@ class LoadBalancer:
         self.worker_health = {i: True for i in range(len(workers))}
         self.assignment_counts = {i: 0 for i in range(len(workers))}
         self.last_scores = {}
+        self.admission_wait_count = 0
+        self.admission_timeout_count = 0
+        self.total_admission_wait_time = 0.0
+        self.max_admission_wait_time = 0.0
 
         print("[LB] Workers registered:")
         for i, w in enumerate(self.workers):
@@ -138,12 +144,6 @@ class LoadBalancer:
             snapshot["score"] = self._score_snapshot(snapshot, min_latency)
             snapshot["rr_distance"] = (snapshot["worker_id"] - self._rr_index) % len(self.workers)
 
-        healthy = [item for item in snapshots if self._is_available(item)]
-
-        if not healthy:
-            raise RuntimeError("No healthy workers available")
-
-        healthy.sort(key=self._candidate_sort_key)
         self.last_scores = {
             item["worker_id"]: {
                 "score": item["score"],
@@ -153,44 +153,93 @@ class LoadBalancer:
                 "max_in_flight": item["max_in_flight"],
                 "latency": item["latency"],
                 "failure_rate": item["failure_rate"],
+                "can_accept": item["can_accept"],
+                "queue_size": item["queue_size"],
+                "queue_capacity": item["queue_capacity"],
             }
             for item in snapshots
         }
+
+        healthy = [item for item in snapshots if self._is_available(item)]
+
+        if not healthy:
+            raise RuntimeError("No workers currently available")
+
+        healthy.sort(key=self._candidate_sort_key)
         return [(item["worker_id"], item["worker"]) for item in healthy]
 
     # ---------------------------
-    # DISPATCH WITH RETRY
+    # DISPATCH WITH ADMISSION BACKPRESSURE
     # ---------------------------
     def dispatch(self, request):
         last_error = None
         excluded = getattr(request, "excluded_worker_ids", set())
+        admission_started_at = None
+        timeout = max(0.0, config.SCHEDULER_ADMISSION_TIMEOUT)
+        deadline = time.time() + timeout
 
-        with self.lock:
-            candidates = self.get_worker_candidates(excluded)
+        while True:
+            candidates = []
 
-            for worker_id, worker in candidates:
+            with self.lock:
                 try:
-                    score = self.last_scores.get(worker_id, {}).get("score", 0.0)
-                    in_flight = self._safe(worker, "in_flight", 0)
-                    max_in_flight = self._safe(worker, "max_in_flight", 1)
-                    print(
-                        f"[LB] Request {request.id} -> Worker {worker_id} "
-                        f"| score={score:.3f} | load={in_flight}/{max_in_flight}"
-                    )
-                    worker.process(request)
-                    self.last_assigned_worker = worker_id
-                    request.assigned_worker_id = worker_id
-                    self.assignment_counts[worker_id] = self.assignment_counts.get(worker_id, 0) + 1
-                    self._rr_index = (worker_id + 1) % len(self.workers)
-                    return True
-                except Exception as exc:
+                    candidates = self.get_worker_candidates(excluded)
+                except RuntimeError as exc:
                     last_error = exc
-                    self._mark_worker_bad(worker_id)
-                    if hasattr(worker, "mark_dispatch_failure"):
-                        worker.mark_dispatch_failure(exc)
-                    continue
 
-        raise RuntimeError(f"Dispatch failed on all workers: {last_error}")
+                for worker_id, worker in candidates:
+                    try:
+                        score = self.last_scores.get(worker_id, {}).get("score", 0.0)
+                        in_flight = self._safe(worker, "in_flight", 0)
+                        max_in_flight = self._safe(worker, "max_in_flight", 1)
+                        worker.process(request)
+                        self.last_assigned_worker = worker_id
+                        request.assigned_worker_id = worker_id
+                        self.assignment_counts[worker_id] = self.assignment_counts.get(worker_id, 0) + 1
+                        self._rr_index = (worker_id + 1) % len(self.workers)
+                        wait_time = time.time() - admission_started_at if admission_started_at else 0.0
+                        if wait_time > 0:
+                            self._record_admission_wait(wait_time)
+                        print(
+                            f"[LB] Request {request.id} -> Worker {worker_id} "
+                            f"| score={score:.3f} | load={in_flight}/{max_in_flight} "
+                            f"| admission_wait={wait_time:.3f}s"
+                        )
+                        return True
+                    except WorkerCapacityError as exc:
+                        last_error = exc
+                        continue
+                    except Exception as exc:
+                        last_error = exc
+                        self._mark_worker_bad(worker_id)
+                        if hasattr(worker, "mark_dispatch_failure"):
+                            worker.mark_dispatch_failure(exc)
+                        continue
+
+            remaining = deadline - time.time()
+            if remaining <= 0 or timeout <= 0:
+                self._record_admission_timeout()
+                reason = last_error or "no worker capacity became available"
+                raise AdmissionTimeoutError(
+                    f"Admission timeout after {timeout:.1f}s: {reason}"
+                )
+
+            if admission_started_at is None:
+                admission_started_at = time.time()
+                print(
+                    f"[LB] Request {request.id} waiting for worker capacity "
+                    f"(timeout={timeout:.1f}s)"
+                )
+
+            time.sleep(min(config.SCHEDULER_ADMISSION_POLL_INTERVAL, remaining))
+
+    def _record_admission_wait(self, wait_time):
+        self.admission_wait_count += 1
+        self.total_admission_wait_time += wait_time
+        self.max_admission_wait_time = max(self.max_admission_wait_time, wait_time)
+
+    def _record_admission_timeout(self):
+        self.admission_timeout_count += 1
 
     def mark_worker_timeout(self, worker_id, request_id):
         if worker_id is None:
@@ -208,6 +257,18 @@ class LoadBalancer:
                 "policy": config.LOAD_BALANCER_POLICY,
                 "assignment_counts": dict(self.assignment_counts),
                 "last_scores": dict(self.last_scores),
+                "admission": {
+                    "wait_count": self.admission_wait_count,
+                    "timeout_count": self.admission_timeout_count,
+                    "total_wait_time_sec": self.total_admission_wait_time,
+                    "max_wait_time_sec": self.max_admission_wait_time,
+                    "avg_wait_time_sec": (
+                        self.total_admission_wait_time / self.admission_wait_count
+                        if self.admission_wait_count else 0.0
+                    ),
+                    "timeout_sec": config.SCHEDULER_ADMISSION_TIMEOUT,
+                    "poll_interval_sec": config.SCHEDULER_ADMISSION_POLL_INTERVAL,
+                },
             }
 
     # ---------------------------
