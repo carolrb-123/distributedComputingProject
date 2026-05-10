@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520">
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#111827} .axis{stroke:#374151;stroke-width:1.2} .grid{stroke:#e5e7eb;stroke-width:1} .muted{fill:#6b7280;font-size:12px} .title{font-size:19px;font-weight:700} .label{font-size:13px;font-weight:600} .tick{font-size:11px;fill:#374151}
+</style>
+<rect width="100%" height="100%" fill="white"/>
+<text x="82" y="34" class="title">Admission Backpressure Events Under Load</text>
+<text x="22" y="250.0" transform="rotate(-90 22 250.0)" class="label">Requests that waited</text>
+<line x1="82" y1="62.00" x2="864" y2="62.00" class="grid"/>
+<text x="72" y="66.00" text-anchor="end" class="tick">148.7</text>
+<line x1="82" y1="137.20" x2="864" y2="137.20" class="grid"/>
+<text x="72" y="141.20" text-anchor="end" class="tick">118.9</text>
+<line x1="82" y1="212.40" x2="864" y2="212.40" class="grid"/>
+<text x="72" y="216.40" text-anchor="end" class="tick">89.2</text>
+<line x1="82" y1="287.60" x2="864" y2="287.60" class="grid"/>
+<text x="72" y="291.60" text-anchor="end" class="tick">59.5</text>
+<line x1="82" y1="362.80" x2="864" y2="362.80" class="grid"/>
+<text x="72" y="366.80" text-anchor="end" class="tick">29.7</text>
+<line x1="82" y1="438.00" x2="864" y2="438.00" class="grid"/>
+<text x="72" y="442.00" text-anchor="end" class="tick">0.0</text>
+<line x1="82" y1="62" x2="82" y2="438" class="axis"/>
+<line x1="82" y1="438" x2="864" y2="438" class="axis"/>
+<rect x="98.00" y="438.00" width="137.20" height="0.00" fill="#7c3aed"/>
+<text x="166.60" y="432.00" text-anchor="middle" class="tick">0.0</text>
+<text x="166.60" y="462" text-anchor="middle" class="tick">50</text>
+<rect x="251.20" y="438.00" width="137.20" height="0.00" fill="#7c3aed"/>
+<text x="319.80" y="432.00" text-anchor="middle" class="tick">0.0</text>
+<text x="319.80" y="462" text-anchor="middle" class="tick">100</text>
+<rect x="404.40" y="438.00" width="137.20" height="0.00" fill="#7c3aed"/>
+<text x="473.00" y="432.00" text-anchor="middle" class="tick">0.0</text>
+<text x="473.00" y="462" text-anchor="middle" class="tick">250</text>
+<rect x="557.60" y="326.73" width="137.20" height="111.27" fill="#7c3aed"/>
+<text x="626.20" y="320.73" text-anchor="middle" class="tick">44.0</text>
+<text x="626.20" y="462" text-anchor="middle" class="tick">500</text>
+<rect x="710.80" y="119.36" width="137.20" height="318.64" fill="#7c3aed"/>
+<text x="779.40" y="113.36" text-anchor="middle" class="tick">126.0</text>
+<text x="779.40" y="462" text-anchor="middle" class="tick">1000</text>
+</svg>

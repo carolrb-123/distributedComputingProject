@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520">
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#111827} .axis{stroke:#374151;stroke-width:1.2} .grid{stroke:#e5e7eb;stroke-width:1} .muted{fill:#6b7280;font-size:12px} .title{font-size:19px;font-weight:700} .label{font-size:13px;font-weight:600} .tick{font-size:11px;fill:#374151}
+</style>
+<rect width="100%" height="100%" fill="white"/>
+<text x="82" y="34" class="title">Load-Balancer Assignments in 1000-Request Run</text>
+<text x="22" y="250.0" transform="rotate(-90 22 250.0)" class="label">Assigned requests</text>
+<line x1="82" y1="62.00" x2="864" y2="62.00" class="grid"/>
+<text x="72" y="66.00" text-anchor="end" class="tick">429.5</text>
+<line x1="82" y1="137.20" x2="864" y2="137.20" class="grid"/>
+<text x="72" y="141.20" text-anchor="end" class="tick">343.6</text>
+<line x1="82" y1="212.40" x2="864" y2="212.40" class="grid"/>
+<text x="72" y="216.40" text-anchor="end" class="tick">257.7</text>
+<line x1="82" y1="287.60" x2="864" y2="287.60" class="grid"/>
+<text x="72" y="291.60" text-anchor="end" class="tick">171.8</text>
+<line x1="82" y1="362.80" x2="864" y2="362.80" class="grid"/>
+<text x="72" y="366.80" text-anchor="end" class="tick">85.9</text>
+<line x1="82" y1="438.00" x2="864" y2="438.00" class="grid"/>
+<text x="72" y="442.00" text-anchor="end" class="tick">0.0</text>
+<line x1="82" y1="62" x2="82" y2="438" class="axis"/>
+<line x1="82" y1="438" x2="864" y2="438" class="axis"/>
+<rect x="98.00" y="384.60" width="111.67" height="53.40" fill="#059669"/>
+<text x="153.83" y="378.60" text-anchor="middle" class="tick">61.0</text>
+<text x="153.83" y="462" text-anchor="middle" class="tick">W0</text>
+<rect x="225.67" y="119.36" width="111.67" height="318.64" fill="#059669"/>
+<text x="281.50" y="113.36" text-anchor="middle" class="tick">364.0</text>
+<text x="281.50" y="462" text-anchor="middle" class="tick">W1</text>
+<rect x="353.33" y="371.47" width="111.67" height="66.53" fill="#059669"/>
+<text x="409.17" y="365.47" text-anchor="middle" class="tick">76.0</text>
+<text x="409.17" y="462" text-anchor="middle" class="tick">W2</text>
+<rect x="481.00" y="125.48" width="111.67" height="312.52" fill="#059669"/>
+<text x="536.83" y="119.48" text-anchor="middle" class="tick">357.0</text>
+<text x="536.83" y="462" text-anchor="middle" class="tick">W3</text>
+<rect x="608.67" y="375.85" width="111.67" height="62.15" fill="#059669"/>
+<text x="664.50" y="369.85" text-anchor="middle" class="tick">71.0</text>
+<text x="664.50" y="462" text-anchor="middle" class="tick">W4</text>
+<rect x="736.33" y="375.85" width="111.67" height="62.15" fill="#059669"/>
+<text x="792.17" y="369.85" text-anchor="middle" class="tick">71.0</text>
+<text x="792.17" y="462" text-anchor="middle" class="tick">W5</text>
+</svg>
