@@ -1,309 +1,664 @@
-# distributedComputingProject# distributedComputingProject
+# Distributed AI Inference System
 
-**Distributed LLM System (RAG + Load Balancing + Multi-Worker)**
+Real distributed AI inference system with cloud GPU workers, adaptive load
+balancing, fault tolerance, admission backpressure, GPU monitoring, RAG, and
+formal scalability evaluation.
 
-A distributed LLM inference system featuring:
-- Retrieval-Augmented Generation (RAG via FAISS)
-- Load balancing across local or remote GPU worker endpoints
-- Multiple concurrent workers backed by llama.cpp-compatible HTTP servers
-- Fault tolerance & health monitoring
-- Multi-server inference using llama.cpp with TinyLlama or another GGUF model
+This project was developed for **CSE354 Distributed Computing** at Ain Shams
+University. It began as an advanced distributed simulation and was upgraded
+into a working distributed inference deployment using real Thunder Compute GPU
+virtual machines.
 
-## System Architecture
-    Client
-      ↓
-    Scheduler
-      ↓
-    Load Balancer
-      ↓
-    GPU Worker Adapters
-      ↓
-    Remote llama.cpp Servers (local or Thunder GPU VMs)
-      ↓
-    RAG (FAISS)
-## Features
+## Project Summary
 
-- ✅ Parallel request handling via threaded workers
-- ✅ Multi-server LLM inference across configurable HTTP endpoints
-- ✅ Worker health monitoring via each endpoint's `/health`
-- ✅ Fault tolerance with task reassignment
-- ✅ Admission backpressure when all GPU workers are saturated
-- ✅ Metrics collection (latency, throughput, success rate)
-- ✅ Modular architecture (Scheduler, Load Balancer, Workers, LLM, RAG)
-- ✅ Load-testable with configurable concurrency
-- ✅ Thunder Compute Phase 1 deployment guide in `docs/thunder_phase1.md`
+The system runs a local controller that distributes AI inference requests across
+multiple remote GPU worker nodes. Each worker is a Thunder Compute VM running an
+Ollama inference server. The controller performs scheduling, RAG context
+retrieval, adaptive load balancing, worker health monitoring, retry logic,
+circuit-breaker fault tolerance, admission backpressure, metrics collection, and
+formal evidence generation.
 
----
+Final evaluated deployment:
 
-## SETUP GUIDE
+| Component | Final Configuration |
+|---|---|
+| Cloud provider | Thunder Compute |
+| Worker count | 6 GPU workers |
+| GPU per worker | 1 x NVIDIA RTX A6000 |
+| Worker runtime | Ollama |
+| Model | TinyLlama |
+| Controller | Local Python process |
+| Monitoring | Per-worker GPU metrics agent |
+| Highest evaluated load | 1000 requests / 120 load threads |
+| Final success rate | 100% |
 
-### 1. Clone the Repository
+## Key Features
+
+- Real remote cloud GPU workers, not simulated workers.
+- Configurable worker endpoints through `LLM_SERVER_URLS`.
+- Ollama/OpenAI-compatible inference using `/v1/chat/completions`.
+- Retrieval-Augmented Generation using a FAISS-backed document index.
+- Adaptive load balancing based on:
+  - worker health state
+  - in-flight request count
+  - queue pressure
+  - EWMA latency
+  - failure rate
+  - recovery/degraded penalties
+- Fault tolerance with:
+  - worker health checks
+  - circuit breaker states
+  - cooldown and recovery
+  - retry-on-different-worker behavior
+- Admission backpressure when all workers are saturated.
+- GPU monitoring with `nvidia-smi` telemetry:
+  - utilization
+  - memory usage
+  - temperature
+  - power draw
+- Formal load evaluation with saved CSV/JSON evidence.
+- Report package with IEEE-style report draft and generated graphs.
+
+## Architecture
+
+```text
+Load Test Clients
+        |
+        v
+Scheduler / Controller
+        |
+        v
+Adaptive Load Balancer
+        |
+        v
+GPU Worker Adapters
+        |
+        v
+Thunder Compute Ollama GPU VMs
+        |
+        v
+TinyLlama Inference
+
+Side channels:
+RAG / FAISS context retrieval
+GPU metrics polling
+Evidence generation
+Monitoring dashboard
+```
+
+Generated architecture figure:
+
+```text
+report/figures/architecture.svg
+```
+
+## Repository Structure
+
+```text
+.
+├── main.py                         # Main controller entry point
+├── config.py                       # Environment-driven runtime config
+├── client/
+│   └── load_generator.py           # Concurrent load generator
+├── common/
+│   ├── errors.py                   # Capacity/admission error types
+│   ├── gpu_metrics.py              # Controller-side GPU metric polling
+│   ├── metrics.py                  # Latency and success-rate metrics
+│   └── models.py                   # Request/Response models
+├── lb/
+│   └── load_balancer.py            # Adaptive load balancing + backpressure
+├── master/
+│   └── scheduler.py                # Scheduling, retries, active tasks
+├── workers/
+│   └── gpu_worker.py               # Logical worker adapter and circuit breaker
+├── llm/
+│   └── inference.py                # Ollama/OpenAI-compatible LLM calls
+├── rag/
+│   ├── document_ingester.py        # FAISS document ingestion
+│   ├── embedding_pipeline.py       # Embedding generation
+│   └── retriever.py                # Top-k context retrieval
+├── monitoring/
+│   └── dashboard.py                # Simple monitoring dashboard/API
+├── scripts/
+│   ├── gpu_metrics_agent.py        # Runs on each GPU VM
+│   ├── run_formal_evaluation.py    # Formal load-test matrix runner
+│   ├── run_thunder_6node_eval.sh   # Final six-worker evaluation script
+│   ├── run_thunder_llama_server.sh # llama.cpp worker helper
+│   └── generate_report_graphs.py   # Builds report SVG graphs
+├── docs/
+│   ├── evaluation_plan.md          # Evaluation methodology
+│   └── thunder_phase1.md           # Thunder deployment notes
+├── report/
+│   ├── ieee_report.md              # Full IEEE-style report draft
+│   ├── ieee_report.tex             # IEEEtran starter version
+│   ├── screenshots_needed.md       # Required screenshot checklist
+│   ├── evaluation_summary_table.csv
+│   └── figures/                    # Generated SVG graphs
+└── evaluation_results/             # Formal run evidence, ignored by git
+```
+
+## Final Evaluation Results
+
+The final six-worker evaluation used the following matrix:
+
+| Users | Load Threads | Success Rate | Failed Requests | Throughput | Avg Latency | P50 | P99 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 50 | 10 | 100.0% | 0 | 2.133 req/s | 2.097s | 1.466s | 5.490s |
+| 100 | 20 | 100.0% | 0 | 3.778 req/s | 2.895s | 2.551s | 9.844s |
+| 250 | 40 | 100.0% | 0 | 4.773 req/s | 5.092s | 3.317s | 15.795s |
+| 500 | 80 | 100.0% | 0 | 5.686 req/s | 9.791s | 3.750s | 58.728s |
+| 1000 | 120 | 100.0% | 0 | 6.905 req/s | 13.931s | 3.372s | 115.463s |
+
+The 1000-request run also recorded:
+
+| Metric | Value |
+|---|---:|
+| Total requests | 1000 |
+| Failed requests | 0 |
+| Admission waits | 126 |
+| Admission timeouts | 0 |
+| Worker states | All `HEALTHY` |
+| GPU metric samples | 90 |
+| Max GPU utilization | 28% |
+| Max GPU memory used | 1081 MB |
+| Max GPU temperature | 52 C |
+| Max GPU power draw | 128.65 W |
+
+Main evidence files:
+
+```text
+evaluation_results/final_eval_6workers_summary.csv
+evaluation_results/final_eval_6workers_users1000_threads120/console.log
+evaluation_results/final_eval_6workers_users1000_threads120/metrics_summary.json
+evaluation_results/final_eval_6workers_users1000_threads120/run_evidence.json
+evaluation_results/final_eval_6workers_users1000_threads120/latencies.csv
+evaluation_results/final_eval_6workers_users1000_threads120/gpu_metrics_history.csv
+```
+
+## Two-Worker Baseline vs Six-Worker Final System
+
+The original two-worker evaluation exposed the scalability bottleneck. At high
+concurrency, workers reached their in-flight capacity and excess requests were
+rejected. The final system fixed this by scaling to six workers and adding
+admission backpressure.
+
+| Users | Two-Worker Success Rate | Six-Worker Success Rate |
+|---:|---:|---:|
+| 50 | 100.0% | 100.0% |
+| 100 | 100.0% | 100.0% |
+| 250 | 37.2% | 100.0% |
+| 500 | 9.8% | 100.0% |
+| 1000 | 5.0% | 100.0% |
+
+Generated comparison graph:
+
+```text
+report/figures/success_rate_scaling.svg
+```
+
+## Requirements
+
+### Local Controller
+
+- Python 3.10+; Python 3.12 was used during final evaluation.
+- macOS, Linux, or Windows.
+- Network access to worker endpoints.
+
+Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Thunder Worker Nodes
+
+For the final cloud deployment:
+
+- Thunder Compute account and CLI.
+- Ollama template instances.
+- One A6000 GPU per node.
+- Forwarded ports:
+  - `11434` for Ollama API
+  - `9100` for GPU metrics agent
+
+## Quick Start: Local Controller with Existing Thunder Workers
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/carolrb-123/distributedComputingProject.git
 cd distributedComputingProject
 ```
 
-### 2. Create Virtual Environment
+Create and activate a virtual environment:
 
-**macOS/Linux:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-**Windows (PowerShell):**
-```powershell
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-### 3. Install Dependencies
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Install llama.cpp
-
-**macOS:**
-```bash
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-make
-```
-
-**Windows (using CMake):**
-```bash
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release
-```
-
-### 5. Download TinyLlama Model
-
-Download: **tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf**
-
-**Direct download:**
-```bash
-cd llama.cpp
-curl -L -O https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
-```
-
-Or download manually from [HuggingFace](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF) and place inside `llama.cpp/`
-
-### 6. Run llama.cpp Servers
-
-⚠️ **IMPORTANT:** Run **4 servers** for optimal performance and fault tolerance.
-
-Navigate to llama.cpp directory:
-```bash
-cd llama.cpp
-```
-
-**Open 4 separate terminals** and run these commands:
-
-**Terminal 1 (Port 8888):**
-```bash
-./build/bin/llama-server \
-  -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
-  --host ::1 \
-  --port 8888 \
-  -ngl 99 \
-  --ctx-size 256 \
-  -n 32 \
-  --threads 8 \
-  --batch-size 512 \
-  --ubatch-size 128 \
-  --parallel 8
-```
-
-**Terminal 2 (Port 8889):**
-```bash
-./build/bin/llama-server \
-  -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
-  --host ::1 \
-  --port 8889 \
-  -ngl 99 \
-  --ctx-size 256 \
-  -n 32 \
-  --threads 8 \
-  --batch-size 512 \
-  --ubatch-size 128 \
-  --parallel 8
-```
-
-**Terminal 3 (Port 8890):**
-```bash
-./build/bin/llama-server \
-  -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
-  --host ::1 \
-  --port 8890 \
-  -ngl 99 \
-  --ctx-size 256 \
-  -n 32 \
-  --threads 8 \
-  --batch-size 512 \
-  --ubatch-size 128 \
-  --parallel 8
-```
-
-**Terminal 4 (Port 8891):**
-```bash
-./build/bin/llama-server \
-  -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
-  --host ::1 \
-  --port 8891 \
-  -ngl 99 \
-  --ctx-size 256 \
-  -n 32 \
-  --threads 8 \
-  --batch-size 512 \
-  --ubatch-size 128 \
-  --parallel 8
-```
-
-**Server Configuration Explained:**
-- `-m`: Model file (TinyLlama 1.1B for fast CPU inference)
-- `--host ::1`: IPv6 localhost
-- `--port`: Unique port for each server (8888-8891)
-- `-ngl 0`: CPU-only (no GPU offloading)
-- `--ctx-size 128`: Small context window for speed
-- `-n 10`: Generate only 10 tokens per response (faster)
-- `--threads 4`: Use 4 CPU threads per server
-
-### 7. Test Each Server
-
-In a new terminal, test that all servers are running:
+Set the six-worker Thunder configuration:
 
 ```bash
-curl http://localhost:8888/health
-curl http://localhost:8889/health
-curl http://localhost:8890/health
-curl http://localhost:8891/health
+export LLM_SERVER_URLS="https://ye96jt3q-11434.thundercompute.net,https://a5oxns3p-11434.thundercompute.net,https://uw01uuc2-11434.thundercompute.net,https://xkj8xszu-11434.thundercompute.net,https://hz8878v2-11434.thundercompute.net,https://ow2vbplc-11434.thundercompute.net"
+export GPU_METRICS_URLS="https://ye96jt3q-9100.thundercompute.net,https://a5oxns3p-9100.thundercompute.net,https://uw01uuc2-9100.thundercompute.net,https://xkj8xszu-9100.thundercompute.net,https://hz8878v2-9100.thundercompute.net,https://ow2vbplc-9100.thundercompute.net"
+export LLM_MODEL=tinyllama
+export LLM_HEALTH_PATH=/api/version
+export NUM_WORKERS=6
+export LLM_MAX_TOKENS=16
+export SCHEDULER_REQUEST_TIMEOUT=240
+export SCHEDULER_ADMISSION_TIMEOUT=300
+export SCHEDULER_ADMISSION_POLL_INTERVAL=0.05
+export WORKER_THREADS=2
+export WORKER_QUEUE_SIZE=8
+export WORKER_MAX_IN_FLIGHT=10
+export LOAD_BALANCER_POLICY=adaptive
 ```
 
-You should see `{"status":"ok"}` from each.
-
-**Optional: Test inference:**
-```bash
-curl http://localhost:8888/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "Hello"}],
-    "max_tokens": 10
-  }'
-```
-
-### 8. Configure Project
-
-The project uses environment variables for worker endpoints. For local testing:
+Run a small smoke test:
 
 ```bash
-export LLM_SERVER_URLS="http://localhost:8888,http://localhost:8889,http://localhost:8890,http://localhost:8891"
-export NUM_WORKERS=4
+export NUM_USERS=12
+export LOAD_TEST_THREADS=6
+python main.py
 ```
 
-For Thunder Compute GPU VMs, see `docs/thunder_phase1.md`.
+Run the full formal six-worker evaluation:
 
-### 9. Run the Project
+```bash
+scripts/run_thunder_6node_eval.sh
+```
 
-In your project directory (with virtual environment activated):
+## Thunder Deployment Guide
+
+The detailed Thunder guide is in:
+
+```text
+docs/thunder_phase1.md
+```
+
+### 1. Create Ollama Worker VMs
+
+Create one Thunder VM per worker using the Ollama template. The final demo used
+six A6000 VMs.
+
+Example:
+
+```bash
+tnr create --mode prototyping --template ollama --gpu a6000 --num-gpus 1 --vcpus 4 --disk-size-gb 100 --yes
+```
+
+### 2. Forward Worker Ports
+
+For each instance:
+
+```bash
+tnr ports forward <instance_id> --add 11434
+tnr ports forward <instance_id> --add 9100
+tnr ports list
+```
+
+### 3. Start Ollama and Pull Model on Each VM
+
+Connect to each VM:
+
+```bash
+tnr connect <instance_id>
+```
+
+Inside the VM:
+
+```bash
+export OLLAMA_HOST=0.0.0.0:11434
+nohup ollama serve > ~/ollama.log 2>&1 &
+ollama pull tinyllama
+```
+
+### 4. Start GPU Metrics Agent on Each VM
+
+Inside each VM:
+
+```bash
+git clone -b phase1-thunder-gpu-workers https://github.com/carolrb-123/distributedComputingProject.git ~/distributedProject
+cd ~/distributedProject
+nohup python3 scripts/gpu_metrics_agent.py > ~/gpu_metrics_agent.log 2>&1 &
+```
+
+Verify locally on the VM:
+
+```bash
+curl http://127.0.0.1:11434/api/version
+curl http://127.0.0.1:9100/metrics
+```
+
+Verify from the controller machine:
+
+```bash
+curl https://<uuid>-11434.thundercompute.net/api/version
+curl https://<uuid>-9100.thundercompute.net/metrics
+```
+
+## Running the System
+
+Main command:
 
 ```bash
 python main.py
 ```
 
-**Expected Output:**
-- System will dispatch requests based on `NUM_USERS`
-- Load balancer distributes across configured workers
-- Each logical worker maps to one configured LLM server URL
-- Real-time logs show request processing, worker health, and fault tolerance
-- Final metrics report saved to `metrics.csv` and `metrics_summary.json`
+Useful environment variables:
 
----
+| Variable | Purpose | Typical Final Value |
+|---|---|---|
+| `LLM_SERVER_URLS` | Comma-separated inference endpoints | six Thunder `11434` URLs |
+| `GPU_METRICS_URLS` | Comma-separated metrics endpoints | six Thunder `9100` URLs |
+| `LLM_MODEL` | Ollama model name | `tinyllama` |
+| `LLM_HEALTH_PATH` | Health endpoint | `/api/version` |
+| `NUM_WORKERS` | Logical worker count | `6` |
+| `NUM_USERS` | Requests in one run | `50` to `1000` |
+| `LOAD_TEST_THREADS` | Client load threads | `10` to `120` |
+| `WORKER_THREADS` | Per-worker local adapter threads | `2` |
+| `WORKER_QUEUE_SIZE` | Per-worker queue size | `8` |
+| `WORKER_MAX_IN_FLIGHT` | Per-worker capacity limit | `10` |
+| `LOAD_BALANCER_POLICY` | Routing policy | `adaptive` |
+| `SCHEDULER_REQUEST_TIMEOUT` | Worker response timeout | `240` |
+| `SCHEDULER_ADMISSION_TIMEOUT` | Backpressure wait limit | `300` |
+| `GPU_METRICS_INTERVAL` | GPU polling interval | `2` |
 
-## Configuration
+## Formal Evaluation
 
-Edit `config.py` to adjust:
+Run the default formal matrix:
 
-```python
-NUM_WORKERS = 4              # Number of worker nodes
-NUM_USERS = 1000             # Concurrent requests to simulate
-LLM_SERVER_URLS = [...]       # Local or Thunder worker URLs
-LLM_TIMEOUT = 60             # Request timeout (seconds)
-WORKER_HEALTH_CHECK_INTERVAL = 2  # Health check frequency
+```bash
+scripts/run_thunder_6node_eval.sh
 ```
 
----
+Override the matrix:
 
-## Performance Optimization Tips
-
-**For better success rate:**
-1. Reduce worker concurrency in `workers/gpu_worker.py`:
-```python
-   self.executor = ThreadPoolExecutor(max_workers=1)  # 1 request per worker
-   self.semaphore = threading.Semaphore(1)
+```bash
+EVAL_ID=smoke_eval_6workers EVAL_MATRIX="24:12" scripts/run_thunder_6node_eval.sh
 ```
 
-2. Increase timeout in `config.py`:
-```python
-   LLM_TIMEOUT = 120
+The formal runner creates:
+
+```text
+evaluation_results/<run_id>/console.log
+evaluation_results/<run_id>/latencies.csv
+evaluation_results/<run_id>/metrics_summary.json
+evaluation_results/<run_id>/run_evidence.json
+evaluation_results/<run_id>/gpu_metrics_history.csv
+evaluation_results/<run_id>/gpu_metrics_history.json
 ```
 
-3. Reduce test load for initial testing:
-```python
-   NUM_USERS = 100
+## Monitoring
+
+Start the controller with dashboard enabled:
+
+```bash
+export ENABLE_MONITORING_DASHBOARD=true
+export MONITORING_HOST=127.0.0.1
+export MONITORING_PORT=8080
+python main.py
 ```
 
-**Why TinyLlama?**
-- TinyLlama (1.1B parameters) runs efficiently on CPU
-- 10-20x faster than Llama-3 8B on CPU-only systems
-- Sufficient for demonstrating distributed system architecture
-- Real AI inference (not simulation)
+Open:
 
----
+```text
+http://127.0.0.1:8080
+```
 
-## Metrics Output
+JSON status endpoint:
 
-After running, check:
-- `metrics.csv` - Per-request latency data
-- `metrics_summary.json` - Overall performance stats
-- Console output - Real-time system behavior
+```text
+http://127.0.0.1:8080/api/status
+```
 
-**Sample Metrics:**
-- Total Requests: 1000
-- Success Rate: 20-40% (CPU-limited)
-- Throughput: ~1-2 req/sec
-- Avg Latency: 15-30s
-- Worker health recovery events
+Worker-level GPU endpoint:
 
----
+```bash
+curl https://<uuid>-9100.thundercompute.net/metrics
+```
+
+## Fault Tolerance Testing
+
+Run simulated circuit-breaker tests:
+
+```bash
+export RUN_FAULT_TOLERANCE_TESTS=true
+export FAULT_TOLERANCE_TEST_REQUESTS=4
+export NUM_USERS=4
+export LOAD_TEST_THREADS=2
+python main.py
+```
+
+Manual Thunder node failure test:
+
+1. Start the controller with at least two worker URLs.
+2. Connect to one Thunder worker.
+3. Stop Ollama:
+
+```bash
+pkill ollama
+```
+
+4. Run a small load test.
+5. Confirm the worker becomes `DEGRADED` or `UNHEALTHY`.
+6. Restart Ollama:
+
+```bash
+export OLLAMA_HOST=0.0.0.0:11434
+nohup ollama serve > ~/ollama.log 2>&1 &
+```
+
+7. Confirm health checks move the worker through `RECOVERING` back to
+   `HEALTHY`.
+
+## Report Package
+
+The report package is in:
+
+```text
+report/
+```
+
+Important files:
+
+| File | Purpose |
+|---|---|
+| `report/ieee_report.md` | Full IEEE-style report draft |
+| `report/ieee_report.tex` | IEEEtran LaTeX starter |
+| `report/screenshots_needed.md` | Screenshot checklist |
+| `report/evaluation_summary_table.csv` | Final evaluation table |
+| `report/figures/*.svg` | Generated graphs |
+
+Regenerate graphs:
+
+```bash
+python3 scripts/generate_report_graphs.py
+```
+
+## Generated Figures
+
+The following figures are generated from the saved evaluation evidence:
+
+```text
+report/figures/architecture.svg
+report/figures/success_rate_scaling.svg
+report/figures/throughput_scaling.svg
+report/figures/latency_summary_6workers.svg
+report/figures/latency_cdf_1000.svg
+report/figures/worker_assignments_1000.svg
+report/figures/admission_backpressure.svg
+report/figures/gpu_summary_6workers.svg
+```
+
+## Demo Checklist
+
+Use this sequence during the live demo:
+
+1. Show Thunder fleet:
+
+```bash
+tnr status
+tnr ports list
+```
+
+2. Verify worker APIs:
+
+```bash
+for id in ye96jt3q a5oxns3p uw01uuc2 xkj8xszu hz8878v2 ow2vbplc; do
+  echo "$id:"
+  curl -s "https://${id}-11434.thundercompute.net/api/version"
+  echo
+done
+```
+
+3. Verify GPU metrics:
+
+```bash
+curl -s https://uw01uuc2-9100.thundercompute.net/metrics
+```
+
+4. Show final evaluation summary:
+
+```text
+evaluation_results/final_eval_6workers_summary.csv
+```
+
+5. Show 1000-request evidence:
+
+```text
+evaluation_results/final_eval_6workers_users1000_threads120/metrics_summary.json
+evaluation_results/final_eval_6workers_users1000_threads120/run_evidence.json
+evaluation_results/final_eval_6workers_users1000_threads120/gpu_metrics_history.csv
+```
+
+6. Show report graphs:
+
+```text
+report/figures/success_rate_scaling.svg
+report/figures/admission_backpressure.svg
+report/figures/worker_assignments_1000.svg
+```
+
+## Local llama.cpp Option
+
+The final evaluated system uses Thunder Ollama workers. A local llama.cpp path
+is still available for development, but it is not the final evaluated
+deployment.
+
+To use local llama.cpp servers:
+
+1. Build llama.cpp.
+2. Start multiple `llama-server` instances on different ports.
+3. Set:
+
+```bash
+export LLM_SERVER_URLS="http://localhost:8888,http://localhost:8889,http://localhost:8890,http://localhost:8891"
+export LLM_HEALTH_PATH=/health
+export NUM_WORKERS=4
+```
+
+4. Run:
+
+```bash
+python main.py
+```
 
 ## Troubleshooting
 
-**"No healthy workers" errors:**
-- Ensure all 4 llama.cpp servers are running
-- Check server health endpoints
-- Increase `LLM_TIMEOUT` in config.py
-- If errors appear only at high concurrency, increase
-  `SCHEDULER_ADMISSION_TIMEOUT` so requests wait for worker capacity instead
-  of timing out at admission.
+### `No workers currently available`
 
-**500 Server Errors:**
-- Too much concurrent load on CPU
-- Reduce `max_workers` in gpu_worker.py to 1
-- Ensure each server is running on correct port
+This usually means every worker is at capacity. Increase admission wait time or
+scale out workers:
 
-**Slow performance:**
-- Expected on CPU-only systems
-- TinyLlama + `-n 10` is already optimized
-- Consider reducing `NUM_USERS` for testing
+```bash
+export SCHEDULER_ADMISSION_TIMEOUT=300
+export SCHEDULER_ADMISSION_POLL_INTERVAL=0.05
+```
 
----
+### Public Thunder URL does not respond
 
+Check the instance and port forwarding:
 
-  
+```bash
+tnr status
+tnr ports list
+tnr ports forward <instance_id> --add 11434
+tnr ports forward <instance_id> --add 9100
+```
+
+### Ollama API is not listening
+
+On the worker VM:
+
+```bash
+export OLLAMA_HOST=0.0.0.0:11434
+nohup ollama serve > ~/ollama.log 2>&1 &
+curl http://127.0.0.1:11434/api/version
+```
+
+### Model is missing
+
+On the worker VM:
+
+```bash
+ollama pull tinyllama
+```
+
+### GPU metrics endpoint is empty or unavailable
+
+On the worker VM:
+
+```bash
+nvidia-smi
+cd ~/distributedProject
+nohup python3 scripts/gpu_metrics_agent.py > ~/gpu_metrics_agent.log 2>&1 &
+curl http://127.0.0.1:9100/metrics
+```
+
+### High p99 latency
+
+High p99 latency under 500 to 1000 requests is expected when backpressure is
+enabled. The system prioritizes completing requests successfully rather than
+drops. To reduce p99 latency:
+
+- add more GPU workers
+- reduce `LLM_MAX_TOKENS`
+- use a faster model
+- tune `WORKER_THREADS`, `WORKER_QUEUE_SIZE`, and `WORKER_MAX_IN_FLIGHT`
+- increase the number of production-grade GPU nodes
+
+## Cost Note
+
+The final demonstration used six Thunder A6000 nodes. During setup, Thunder
+estimated each node at approximately `$0.35/hr`, for a six-node pool around
+`$2.10/hr`. Delete unused demo nodes after testing:
+
+```bash
+tnr delete <instance_id>
+```
+
+## References
+
+- Thunder Compute templates documentation:  
+  https://www.thundercompute.com/docs/guides/using-instance-templates
+- Ollama OpenAI compatibility:  
+  https://docs.ollama.com/api/openai-compatibility
+- FAISS documentation:  
+  https://faiss.ai/index.html
+- FAISS GitHub repository:  
+  https://github.com/facebookresearch/faiss
+- FAISS paper DOI:  
+  https://doi.org/10.1109/TBDATA.2019.2921572
+
+## License
+
+This repository was created for academic coursework. Add a formal license file
+if the project will be reused or published beyond the course submission.
